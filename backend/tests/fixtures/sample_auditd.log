@@ -1,0 +1,6 @@
+type=SYSCALL msg=audit(1698653270.000:100): arch=c000003e syscall=59 success=yes exit=0 pid=2345 ppid=1234 auid=1000 uid=0 gid=0 euid=0 comm="whoami" exe="/usr/bin/whoami" node=HR-07
+type=EXECVE msg=audit(1698653270.000:100): argc=1 a0="whoami"
+type=SYSCALL msg=audit(1698653350.000:101): arch=c000003e syscall=59 success=yes exit=0 pid=2346 ppid=1234 auid=1000 uid=0 gid=0 euid=0 comm="cat" exe="/bin/cat" node=HR-07
+type=PATH msg=audit(1698653350.000:101): name="/etc/shadow" inode=12345 dev=08:01 mode=0100640 ouid=0 ogid=42
+type=SYSCALL msg=audit(1698653500.000:102): arch=c000003e syscall=59 success=yes exit=0 pid=2500 ppid=1234 auid=1000 uid=0 gid=0 euid=0 comm="ssh" exe="/usr/bin/ssh" node=HR-07
+type=USER_AUTH msg=audit(1698653200.000:99): pid=1234 uid=0 auid=4294967295 acct="admin" exe="/usr/sbin/sshd" hostname=10.0.0.55 addr=10.0.0.55 node=HR-07

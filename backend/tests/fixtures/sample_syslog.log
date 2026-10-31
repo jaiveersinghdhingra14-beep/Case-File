@@ -1,0 +1,5 @@
+<86>Oct 30 08:00:01 HR-07 sshd[1234]: Failed password for admin from 10.0.0.55 port 44821 ssh2
+<86>Oct 30 08:00:02 HR-07 sshd[1234]: Failed password for admin from 10.0.0.55 port 44822 ssh2
+<86>Oct 30 08:00:05 HR-07 sshd[1234]: Accepted password for admin from 10.0.0.55 port 44823 ssh2
+<86>Oct 30 08:01:00 HR-07 CRON[9999]: (root) CMD (/usr/sbin/logrotate /etc/logrotate.conf)
+<86>Oct 30 08:05:00 HR-07 sudo[2499]: admin : TTY=pts/0 ; PWD=/home/admin ; USER=root ; COMMAND=/usr/bin/ssh svc_backup@FS-02

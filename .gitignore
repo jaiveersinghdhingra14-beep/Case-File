@@ -38,6 +38,7 @@ data/parquet/*
 data/raw/*
 !data/raw/.gitkeep
 *.log
+!backend/tests/fixtures/*.log
 
 # Testing & Coverage
 .pytest_cache/

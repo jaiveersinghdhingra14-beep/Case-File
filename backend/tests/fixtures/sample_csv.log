@@ -1,0 +1,5 @@
+timestamp,host,user,pid,ppid,executable,command_line,file_path,source_ip,source_port,event_id
+2026-10-30T08:00:01Z,HR-07,admin,1234,,/usr/sbin/sshd,,,,44821,csv_evt_001
+2026-10-30T08:01:10Z,HR-07,admin,2345,1234,/usr/bin/whoami,whoami,,,,csv_evt_002
+2026-10-30T08:02:30Z,HR-07,admin,2346,1234,/bin/cat,cat /etc/shadow,/etc/shadow,,,csv_evt_003
+2026-10-30T08:05:00Z,HR-07,admin,2500,1234,/usr/bin/ssh,ssh svc_backup@FS-02,,,,csv_evt_004
