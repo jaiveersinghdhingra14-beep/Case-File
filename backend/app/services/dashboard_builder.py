@@ -498,8 +498,13 @@ def build_dashboard_html(
       <span class="badge badge-critical">Active Threat</span>
       <span class="badge badge-verified">100% Citations Verified</span>
     </div>
-    <div class="meta-info">
-      Dataset: {dataset_id} ({dataset_name}) | Model: {story.model_name}
+    <div style="display: flex; align-items: center; gap: 14px;">
+      <div class="meta-info">
+        Dataset: {dataset_id} ({dataset_name}) | Model: {story.model_name}
+      </div>
+      <button class="btn" onclick="window.location.href='/'" style="background: rgba(59, 130, 246, 0.2); border: 1px solid #3b82f6; color: #93c5fd; font-size: 12px; display: flex; align-items: center; gap: 6px;">
+        <span>🔄</span><span>Upload New Log</span>
+      </button>
     </div>
   </div>
 
@@ -1279,11 +1284,12 @@ def build_dashboard_html(
 
         setTimeout(() => {{
           if (data.html) {{
+            window.history.pushState({{}}, '', '/dashboard');
             document.open();
             document.write(data.html);
             document.close();
           }} else {{
-            window.location.reload();
+            window.location.href = '/dashboard';
           }}
         }}, 1200);
 

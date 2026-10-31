@@ -257,7 +257,7 @@ def run_pipeline_endpoint(
 
     # 8. Compile Unified Dashboard HTML
     _update_status("running", "Compiling Dashboard", 95, "Compiling interactive attack graph & forensic timeline...")
-    dashboard_path = settings.BASE_DIR / "frontend" / "index.html"
+    dashboard_path = settings.BASE_DIR / "frontend" / "dashboard.html"
     build_dashboard_html(
         dataset_id=dataset_id,
         dataset_name=ds.name,
@@ -293,6 +293,6 @@ def run_pipeline_endpoint(
         "patterns_detected": len(patterns),
         "evasions_unmasked": evasion_metrics.get("evasions_unmasked", 0),
         "raw_bytes_verified": evasion_metrics.get("raw_bytes_verified", 0),
-        "dashboard_url": "/",
+        "dashboard_url": "/dashboard",
         "html": html_content,
     }

@@ -72,3 +72,13 @@ if frontend_dir.exists():
         if index_file.exists():
             return FileResponse(index_file)
         return {"status": "CaseFile API running. Place index.html in frontend/"}
+
+    @app.get("/dashboard", include_in_schema=False)
+    async def serve_dashboard():
+        dash_file = frontend_dir / "dashboard.html"
+        if dash_file.exists():
+            return FileResponse(dash_file)
+        index_file = frontend_dir / "index.html"
+        if index_file.exists():
+            return FileResponse(index_file)
+        return {"status": "CaseFile API running. Place index.html in frontend/"}

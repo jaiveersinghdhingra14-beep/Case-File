@@ -75,7 +75,7 @@ def test_pipeline_run_with_file_upload():
     assert "html" in res_data
     assert "CaseFile v2" in res_data["html"]
     assert "Live Telemetry Ingestion" in res_data["html"]
-    assert res_data["dashboard_url"] == "/"
+    assert res_data["dashboard_url"] == "/dashboard"
 
     # Verify status after run is complete
     st = get_pipeline_status()
