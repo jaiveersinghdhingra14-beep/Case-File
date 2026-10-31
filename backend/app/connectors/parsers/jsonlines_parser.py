@@ -72,9 +72,9 @@ class JsonLinesParser(BaseParser):
 
         # --- Host extraction ---
         host = (
-            _deep_get(obj, "agent", "name")
-            or _deep_get(obj, "host", "name")
+            _deep_get(obj, "host", "name")
             or _deep_get(obj, "host", "hostname")
+            or _deep_get(obj, "agent", "name")
             or obj.get("hostname")
             or obj.get("host")
             or obj.get("computer_name")
@@ -139,13 +139,15 @@ class JsonLinesParser(BaseParser):
 
         # --- Network fields ---
         remote_address = (
-            _deep_get(obj, "data", "srcip")
+            _deep_get(obj, "destination", "ip")
+            or _deep_get(obj, "data", "srcip")
             or _deep_get(obj, "source", "ip")
             or obj.get("remote_address")
             or obj.get("src_ip")
         )
         remote_port = self.safe_int(
-            _deep_get(obj, "data", "srcport")
+            _deep_get(obj, "destination", "port")
+            or _deep_get(obj, "data", "srcport")
             or _deep_get(obj, "source", "port")
             or obj.get("remote_port")
             or obj.get("src_port")
@@ -155,10 +157,21 @@ class JsonLinesParser(BaseParser):
         wazuh_rule_id = self.safe_int(_deep_get(obj, "rule", "id"))
         wazuh_rule_level = self.safe_int(_deep_get(obj, "rule", "level"))
 
-        # --- MITRE ATT&CK IDs ---
-        mitre_ids = _deep_get(obj, "rule", "mitre", "id") or []
+        # --- MITRE ATT&CK IDs & Kill Chain Stage ---
+        mitre_ids = (
+            _deep_get(obj, "threat", "technique", "id")
+            or _deep_get(obj, "rule", "mitre", "id")
+            or []
+        )
         if isinstance(mitre_ids, str):
             mitre_ids = [mitre_ids]
+
+        tactics = _deep_get(obj, "threat", "tactic", "name") or []
+        kill_chain_stage = None
+        if isinstance(tactics, list) and tactics:
+            kill_chain_stage = str(tactics[0])
+        elif isinstance(tactics, str):
+            kill_chain_stage = tactics
 
         # --- Category classification ---
         category = _classify_category(obj, executable, file_path, remote_address)
@@ -197,7 +210,7 @@ class JsonLinesParser(BaseParser):
             "wazuh_rule_id": wazuh_rule_id,
             "wazuh_rule_level": wazuh_rule_level,
             "mitre_ids": mitre_ids,
-            "kill_chain_stage": None,
+            "kill_chain_stage": kill_chain_stage,
             "is_noise": False,
             "noise_reason": None,
             "group_id": None,
@@ -227,12 +240,29 @@ def _deep_get(d: dict, *keys: str) -> Any:
 
 
 def _classify_category(obj: dict, exe: Any, fpath: Any, remote: Any) -> str:
-    """Deterministic category classification — no ML, fully inspectable."""
+    """Deterministic category classification — supports ECS event.category and Wazuh rules."""
+    # Check ECS event.category first
+    ecs_cats = _deep_get(obj, "event", "category") or []
+    if isinstance(ecs_cats, str):
+        ecs_cats = [ecs_cats]
+    for c in ecs_cats:
+        cl = str(c).lower()
+        if "process" in cl:
+            return "process_exec"
+        if "network" in cl:
+            return "network"
+        if "file" in cl:
+            return "file_access"
+        if "auth" in cl:
+            return "authentication"
+        if "registry" in cl:
+            return "file_change"
+
     rule_groups = _deep_get(obj, "rule", "groups") or []
     if isinstance(rule_groups, str):
         rule_groups = [rule_groups]
 
-    # Check Wazuh rule groups first
+    # Check Wazuh rule groups
     for g in rule_groups:
         gl = str(g).lower()
         if "authentication" in gl or "login" in gl or "pam" in gl:
