@@ -48,6 +48,19 @@ def get_format_name(parser: BaseParser) -> str:
     return name_map.get(type(parser), "unknown")
 
 
+def get_parser_by_name(format_name: str) -> BaseParser | None:
+    """Return an instance of a parser given its format name."""
+    name_to_class = {
+        "fortigate": FortigateParser,
+        "auditd": AuditdParser,
+        "jsonlines": JsonLinesParser,
+        "syslog": SyslogParser,
+        "csv": CsvParser,
+    }
+    cls = name_to_class.get(format_name.lower())
+    return cls() if cls else None
+
+
 __all__ = [
     "AuditdParser",
     "BaseParser",

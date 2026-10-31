@@ -8,6 +8,7 @@ Usage:
 """
 import argparse
 from datetime import datetime, timezone
+import os
 from pathlib import Path
 import sys
 import time
@@ -23,9 +24,11 @@ from backend.app.store import db
 
 
 def main():
+    default_workers = min(os.cpu_count() or 4, 8)
     parser = argparse.ArgumentParser(description="Ingest big log file into CaseFile Parquet storage.")
     parser.add_argument("file_path", help="Path to raw log file (e.g. data/raw/firex-10G.log)")
-    parser.add_argument("--batch-size", type=int, default=10000, help="Arrow batch size (default: 10,000)")
+    parser.add_argument("--batch-size", type=int, default=25000, help="Arrow batch size (default: 25,000)")
+    parser.add_argument("--workers", type=int, default=default_workers, help=f"Parallel CPU workers (default: {default_workers})")
     parser.add_argument("--name", type=str, default="", help="Optional display name for dataset")
     args = parser.parse_args()
 
@@ -75,7 +78,7 @@ def main():
     print(f"  Profiling Time  : {prof_time:.3f}s (sub-second micro-slice)")
 
     # 3. Run Ingest
-    print(f"\n[Stage 2/2] Streaming ingestion into Parquet (Batch Size: {args.batch_size:,})...")
+    print(f"\n[Stage 2/2] Streaming ingestion into Parquet (Batch Size: {args.batch_size:,} | Workers: {args.workers})...")
 
     last_update = time.perf_counter()
     def progress_callback(rows_in: int, rows_out: int):
@@ -85,7 +88,12 @@ def main():
             print(f"\r  Progress: {rows_in:,} raw lines read | {rows_out:,} events structured", end="", flush=True)
             last_update = now
 
-    report = ingest_dataset_sync(ds_id, batch_size=args.batch_size, progress_callback=progress_callback)
+    report = ingest_dataset_sync(
+        ds_id,
+        batch_size=args.batch_size,
+        num_workers=args.workers,
+        progress_callback=progress_callback,
+    )
     print()  # newline
 
     # 4. Results
