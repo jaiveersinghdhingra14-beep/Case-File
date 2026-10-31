@@ -75,12 +75,36 @@ def cmd_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def resolve_log_file_path(target_str: str) -> Path | None:
+    """
+    Intelligently resolves a user-supplied log file path:
+    1. Exact match file
+    2. Appending common extensions (.log, .txt, .json, .csv, .jsonl)
+    3. Directory inspection (picking the largest log file inside)
+    """
+    p = Path(target_str)
+    if p.exists() and p.is_file():
+        return p
+    if not p.exists():
+        for ext in [".log", ".txt", ".json", ".csv", ".jsonl"]:
+            candidate = p.with_suffix(ext)
+            if candidate.exists() and candidate.is_file():
+                return candidate
+    elif p.is_dir():
+        candidates = list(p.glob("*.log")) + list(p.glob("*.txt")) + list(p.glob("*.json")) + list(p.glob("*"))
+        file_candidates = [c for c in candidates if c.is_file()]
+        if file_candidates:
+            file_candidates.sort(key=lambda f: f.stat().st_size, reverse=True)
+            return file_candidates[0]
+    return None
+
+
 def cmd_ingest(args: argparse.Namespace) -> str | None:
     """Runs parallel streaming ingestion on a raw log file."""
     db.init_db()
-    file_path = Path(args.file)
+    file_path = resolve_log_file_path(args.file) or Path(args.file)
     if not file_path.exists():
-        print(f"[ERROR] Target file not found: {file_path}", file=sys.stderr)
+        print(f"[ERROR] Target file not found: {args.file}", file=sys.stderr)
         return None
 
     dataset_id = db.generate_id("ds_")
@@ -190,22 +214,24 @@ def cmd_run_all(args: argparse.Namespace) -> int:
     """
     db.init_db()
     target = args.target
-
-    # Determine if target is a file or dataset ID
-    target_path = Path(target) if target else None
     dataset_id = ""
 
-    if target_path and target_path.exists() and target_path.is_file():
-        # Ingest file first
-        args.file = str(target_path)
-        args.batch_size = getattr(args, "batch_size", 10000)
-        args.workers = getattr(args, "workers", None)
-        args.name = target_path.name
-        dataset_id = cmd_ingest(args)
-        if not dataset_id:
+    if target:
+        resolved_file = resolve_log_file_path(target)
+        if resolved_file:
+            args.file = str(resolved_file)
+            args.batch_size = getattr(args, "batch_size", 10000)
+            args.workers = getattr(args, "workers", None)
+            args.name = resolved_file.name
+            dataset_id = cmd_ingest(args)
+            if not dataset_id:
+                return 1
+        elif target.startswith("ds_"):
+            dataset_id = target
+        else:
+            print(f"[ERROR] Target log file or dataset '{target}' not found.", file=sys.stderr)
+            print("Please verify the file path (e.g., 'D:\\firex-30G.log') or dataset ID.", file=sys.stderr)
             return 1
-    elif target and target.startswith("ds_"):
-        dataset_id = target
     else:
         # Pick latest ready dataset
         ready = [d for d in db.list_datasets() if d.status == "ready"]

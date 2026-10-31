@@ -181,6 +181,12 @@ def generate_groq_story_draft(
 
     content = response.choices[0].message.content or "{}"
     parsed_json = json.loads(content)
+    if isinstance(parsed_json, dict) and "steps" in parsed_json and isinstance(parsed_json["steps"], list):
+        for step_data in parsed_json["steps"]:
+            if isinstance(step_data, dict) and "evidence_event_ids" in step_data:
+                ev = step_data["evidence_event_ids"]
+                if isinstance(ev, list) and len(ev) > 32:
+                    step_data["evidence_event_ids"] = ev[:32]
     parsed = StoryDraftOutput.model_validate(parsed_json)
     # Normalize technique IDs so no step is left as T0000
     for s in parsed.steps:

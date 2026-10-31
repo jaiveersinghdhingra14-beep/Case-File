@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from .common import (
     AnalystDecision,
@@ -27,14 +27,27 @@ class CheckResult(BaseModel):
 
 
 class StoryStepDraft(BaseModel):
-    title: str = Field(description="Short title, at most 80 characters.", max_length=80)
+    title: str = Field(description="Short title.", max_length=200)
     description: str = Field(
         description="What the attacker did, in one or two sentences, using only what cited events show."
     )
     technique_id: str | None = Field(default=None, description="ATT&CK technique ID, only if model is confident.")
-    evidence_event_ids: list[str] = Field(
-        description="IDs of events that show it. At least 1 and at most 8.", min_length=1, max_length=8
-    )
+    evidence_event_ids: list[str] = Field(description="IDs of events that show it.", min_length=1, max_length=64)
+
+    @field_validator("evidence_event_ids", mode="before")
+    @classmethod
+    def sanitize_evidence_ids(cls, v: object) -> object:
+        if isinstance(v, list):
+            # Limit to at most 32 items if LLM returned a large batch of IDs
+            return [str(x) for x in v[:32]]
+        return v
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def sanitize_title(cls, v: object) -> object:
+        if isinstance(v, str) and len(v) > 190:
+            return v[:187] + "..."
+        return v
 
 
 class StoryDraftOutput(BaseModel):
