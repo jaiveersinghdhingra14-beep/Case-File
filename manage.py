@@ -363,8 +363,6 @@ def cmd_run_all(args: argparse.Namespace) -> int:
     custom_model = getattr(args, "model", None)
     if active_provider == "groq":
         active_model = custom_model or settings.GROQ_MODEL
-        if any(bad in active_model.lower() for bad in ["gpt-oss", "openai/", "mixtral"]):
-            active_model = "llama-3.3-70b-versatile"
         active_key = groq_key
     elif active_provider == "gemini":
         active_model = custom_model or settings.LLM_MODEL

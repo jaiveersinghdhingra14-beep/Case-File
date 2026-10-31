@@ -97,7 +97,7 @@ def generate_mock_story_draft(
 def generate_groq_story_draft(
     events: Sequence[NormalizedEvent],
     api_key: str,
-    model_name: str = "llama-3.3-70b-versatile",
+    model_name: str = "openai/gpt-oss-120b",
     patterns: Sequence[AttackPattern] | None = None,
 ) -> tuple[StoryDraftOutput, int, int]:
     """
@@ -105,14 +105,12 @@ def generate_groq_story_draft(
     forcing evidence-grounded JSON schema output.
     Returns (StoryDraftOutput, prompt_tokens, output_tokens).
     """
-    if any(bad in model_name.lower() for bad in ["gpt-oss", "openai/", "mixtral"]):
-        model_name = "llama-3.3-70b-versatile"
-
     import json
+    import time
 
     from groq import Groq
 
-    client = Groq(api_key=api_key, timeout=25.0)
+    client = Groq(api_key=api_key, timeout=30.0)
 
     telemetry_lines = []
     for e in events:
@@ -157,32 +155,31 @@ def generate_groq_story_draft(
         f"Return ONLY valid JSON matching the schema."
     )
 
-    candidate_models = [model_name]
-    for alt in ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]:
-        if alt not in candidate_models:
-            candidate_models.append(alt)
-
     response = None
     last_err = None
 
-    for m in candidate_models:
+    for attempt in range(3):
         try:
             response = client.chat.completions.create(
                 messages=[
                     {"role": "system", "content": system_instruction},
                     {"role": "user", "content": prompt},
                 ],
-                model=m,
+                model=model_name,
                 response_format={"type": "json_object"},
                 temperature=0.1,
             )
             break
         except Exception as e:  # noqa: BLE001
             last_err = e
-            continue
+            err_msg = str(e).lower()
+            if attempt < 2 and any(k in err_msg for k in ["rate", "429", "timeout", "concurrency", "overloaded"]):
+                time.sleep(1.5 * (attempt + 1))
+                continue
+            break
 
     if response is None:
-        raise last_err or RuntimeError("No response from Groq candidate models.")
+        raise last_err or RuntimeError(f"Groq API call failed for model {model_name}.")
 
     content = response.choices[0].message.content or "{}"
     parsed_json = json.loads(content)
@@ -382,22 +379,32 @@ def synthesize_executive_narrative(
 
     if provider == "groq" and api_key:
         try:
+            import time
+
             from groq import Groq
 
-            client = Groq(api_key=api_key, timeout=25.0)
-            target_model = model_name or "llama-3.3-70b-versatile"
-            resp = client.chat.completions.create(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                model=target_model,
-                temperature=0.2,
-                max_tokens=1500,
-            )
-            narrative = resp.choices[0].message.content or ""
-            if len(narrative.strip()) > 100:
-                return narrative.strip()
+            client = Groq(api_key=api_key, timeout=30.0)
+            target_model = model_name or "openai/gpt-oss-120b"
+            for attempt in range(3):
+                try:
+                    resp = client.chat.completions.create(
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        model=target_model,
+                        temperature=0.2,
+                        max_tokens=1500,
+                    )
+                    narrative = resp.choices[0].message.content or ""
+                    if len(narrative.strip()) > 100:
+                        return narrative.strip()
+                    break
+                except Exception as e:
+                    if attempt < 2 and any(k in str(e).lower() for k in ["rate", "429", "timeout"]):
+                        time.sleep(2.0 * (attempt + 1))
+                        continue
+                    raise
         except Exception as e:  # noqa: BLE001
             import sys
 
@@ -504,8 +511,6 @@ def write_story_for_events(
             return c_idx, _LLM_CACHE[chunk_hash], 0, 0, True
 
         target_model = model_name or (settings.GROQ_MODEL if use_groq else settings.LLM_MODEL)
-        if use_groq and any(bad in str(target_model).lower() for bad in ["gpt-oss", "openai/", "mixtral"]):
-            target_model = "llama-3.3-70b-versatile"
         if use_groq:
             try:
                 print(f"  [LLM Worker {c_idx}] Invoking Groq ({target_model}, {len(chunk)} events in chunk)...")

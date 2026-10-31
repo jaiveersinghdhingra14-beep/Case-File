@@ -23,9 +23,9 @@ class Settings(BaseSettings):
     # LLM Settings
     LLM_PROVIDER: str = "groq"
     GROQ_API_KEY: str = ""
-    GROQ_MODEL: str = "llama-3.3-70b-versatile"
+    GROQ_MODEL: str = "openai/gpt-oss-120b"
     GEMINI_API_KEY: str = ""
-    LLM_MODEL: str = "llama-3.3-70b-versatile"
+    LLM_MODEL: str = "openai/gpt-oss-120b"
     USE_MOCK_LLM: bool = False
     MAX_LLM_CALLS: int = 200
 
@@ -50,16 +50,12 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def sync_models(self) -> "Settings":
-        # Auto-correct obsolete or invalid Groq models (e.g. openai/gpt-oss-120b, mixtral)
+        # Keep GROQ_MODEL and LLM_MODEL in sync
         if self.LLM_PROVIDER.lower() == "groq":
-            if any(bad in self.GROQ_MODEL.lower() for bad in ["gpt-oss", "openai/", "mixtral"]):
-                self.GROQ_MODEL = "llama-3.3-70b-versatile"
-                self.LLM_MODEL = "llama-3.3-70b-versatile"
-
             if (
                 self.LLM_MODEL
                 and "gemini" not in self.LLM_MODEL.lower()
-                and (not self.GROQ_MODEL or self.GROQ_MODEL == "llama-3.3-70b-versatile")
+                and (not self.GROQ_MODEL or self.GROQ_MODEL == "openai/gpt-oss-120b")
             ):
                 self.GROQ_MODEL = self.LLM_MODEL
             if self.GROQ_MODEL:
