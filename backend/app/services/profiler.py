@@ -71,8 +71,10 @@ def profile_file(file_path: str | Path, sample_size: int = 50) -> ProfileResult:
     format_name = get_format_name(parser) if parser else "unknown"
 
     # --- Estimate total lines ---
-    non_blank = [l for l in all_sample_lines if l.strip()]
-    avg_line_bytes = sum(len(l.encode("utf-8", errors="replace")) for l in non_blank) / max(len(non_blank), 1)
+    non_blank = [line_item for line_item in all_sample_lines if line_item.strip()]
+    avg_line_bytes = sum(len(line_item.encode("utf-8", errors="replace")) for line_item in non_blank) / max(
+        len(non_blank), 1
+    )
     estimated_lines = int(size_bytes / max(avg_line_bytes, 1)) if avg_line_bytes > 0 else 0
 
     # --- Extract hosts and time range from sample ---
@@ -133,4 +135,4 @@ def _read_chunk_lines(fpath: Path, offset: int, chunk_bytes: int, max_lines: int
         lines = lines[:-1]
 
     # Strip and limit
-    return [l for l in lines if l.strip()][:max_lines]
+    return [line_item for line_item in lines if line_item.strip()][:max_lines]

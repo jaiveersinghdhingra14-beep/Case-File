@@ -193,7 +193,7 @@ def detect_patterns_from_events(events: Sequence[NormalizedEvent]) -> list[Attac
                     title=f"Repeated Anomalous Activity Burst ({count} events)",
                     mitre_id="T1190",
                     technique_name="Suspicious Burst Traffic",
-                    kill_chain_stage=KillChainStage.DELIVERY,
+                    kill_chain_stage=KillChainStage.INITIAL_ACCESS,
                     target_host=target,
                     source_ip=src,
                     attempt_count=count,

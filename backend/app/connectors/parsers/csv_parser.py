@@ -41,7 +41,7 @@ class CsvParser(BaseParser):
         if not sample_lines:
             return False
 
-        non_blank = [l.strip() for l in sample_lines if l.strip()]
+        non_blank = [line.strip() for line in sample_lines if line.strip()]
         if len(non_blank) < 2:
             return False
 

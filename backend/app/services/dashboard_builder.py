@@ -18,6 +18,34 @@ from ..schemas import (
 )
 
 
+def _is_priv_addr(ip: str | None) -> bool:
+    if not ip:
+        return False
+    return ip.startswith(
+        (
+            "10.",
+            "172.16.",
+            "172.17.",
+            "172.18.",
+            "172.19.",
+            "172.20.",
+            "172.21.",
+            "172.22.",
+            "172.23.",
+            "172.24.",
+            "172.25.",
+            "172.26.",
+            "172.27.",
+            "172.28.",
+            "172.29.",
+            "172.30.",
+            "172.31.",
+            "192.168.",
+            "127.",
+        )
+    )
+
+
 def build_dashboard_html(
     dataset_id: str,
     dataset_name: str,
@@ -37,49 +65,145 @@ def build_dashboard_html(
     edges_list: list[dict] = []
     seen_edges: set[tuple[str, str, str]] = set()
 
-    # Identify compromised hosts and external IPs
-    compromised_hosts = sorted({e.host for e in candidate_events if e.host})
-    external_ips = sorted(
-        {e.remote_address for e in candidate_events if e.remote_address and not e.remote_address.startswith("10.")}
-    )
+    external_ips: set[str] = set()
+    internal_hosts: set[str] = set()
+    dmz_targets: set[str] = set()
 
-    for h in compromised_hosts:
-        nodes_map[h] = {
-            "id": h,
-            "label": f"INTERNAL HOST\n{h}",
-            "color": {"background": "#ff9800", "border": "#f57c00"},
+    for e in candidate_events:
+        for addr in (e.host, e.remote_address):
+            if not addr:
+                continue
+            if _is_priv_addr(addr):
+                internal_hosts.add(addr)
+            elif not addr.startswith(("0.", "255.", "224.")):
+                external_ips.add(addr)
+
+        if e.remote_address and e.host:
+            if not _is_priv_addr(e.host) and _is_priv_addr(e.remote_address):
+                dmz_targets.add(e.remote_address)
+            elif not _is_priv_addr(e.remote_address) and _is_priv_addr(e.host):
+                dmz_targets.add(e.host)
+
+    # Add External Threat Campaign Root to tie all external attackers into a cohesive campaign
+    if external_ips:
+        nodes_map["ext_threat_actor"] = {
+            "id": "ext_threat_actor",
+            "label": "EXTERNAL ATTACK CAMPAIGN\nAdversary / Botnet Ingress",
+            "color": {"background": "#b91c1c", "border": "#991b1b"},
             "shape": "box",
-            "font": {"color": "#ffffff", "face": "JetBrains Mono, monospace", "size": 13},
+            "level": 1,
+            "font": {"color": "#ffffff", "face": "JetBrains Mono, monospace", "size": 13, "bold": True},
         }
 
-    for ip in external_ips:
+    for ip in sorted(external_ips)[:15]:
+        is_c2 = any("T1071" in (e.mitre_ids or []) for e in candidate_events if e.remote_address == ip or e.host == ip)
+        lbl = f"C2 SERVER\n{ip}" if is_c2 else f"ATTACKER IP\n{ip}"
         nodes_map[ip] = {
             "id": ip,
-            "label": f"ADVERSARY / C2\n{ip}",
-            "color": {"background": "#f44336", "border": "#d32f2f"},
+            "label": lbl,
+            "color": {"background": "#ef4444", "border": "#dc2626"},
             "shape": "box",
-            "font": {"color": "#ffffff", "face": "JetBrains Mono, monospace", "size": 13},
+            "level": 2,
+            "font": {"color": "#ffffff", "face": "JetBrains Mono, monospace", "size": 12},
+        }
+        edges_list.append(
+            {
+                "from": "ext_threat_actor",
+                "to": ip,
+                "label": "Campaign Ingress",
+                "arrows": "to",
+                "dashes": True,
+                "color": {"color": "#ef4444"},
+                "font": {"color": "#94a3b8", "size": 10},
+            }
+        )
+
+    for h in sorted(internal_hosts)[:25]:
+        is_crown_jewel = any(k in h.upper() for k in ["DC", "DB", "FILE", "SQL", "0.10", "0.20", "0.40"])
+        if is_crown_jewel:
+            lbl = f"CRITICAL ASSET\n{h}"
+            clr = {"background": "#8b5cf6", "border": "#7c3aed"}
+            lvl = 5
+        elif h in dmz_targets:
+            lbl = f"DMZ INGRESS HOST\n{h}"
+            clr = {"background": "#f59e0b", "border": "#d97706"}
+            lvl = 3
+        else:
+            lbl = f"COMPROMISED HOST\n{h}"
+            clr = {"background": "#3b82f6", "border": "#2563eb"}
+            lvl = 4
+
+        nodes_map[h] = {
+            "id": h,
+            "label": lbl,
+            "color": clr,
+            "shape": "box",
+            "level": lvl,
+            "font": {"color": "#ffffff", "face": "JetBrains Mono, monospace", "size": 12},
         }
 
-    # Add edges
+    # Add Crown Jewels target group
+    if "dc_net" not in nodes_map:
+        nodes_map["dc_net"] = {
+            "id": "dc_net",
+            "label": "CRITICAL DOMAIN CONTROLLERS\n10.10.0.0/24 (Target Protected)",
+            "color": {"background": "#8b5cf6", "border": "#7c3aed"},
+            "shape": "box",
+            "level": 5,
+            "font": {"color": "#ffffff", "face": "JetBrains Mono, monospace", "size": 12, "bold": True},
+        }
+
+    # Connect candidate events
     for e in candidate_events:
-        if e.remote_address and e.host:
-            src = e.remote_address if not e.remote_address.startswith("10.") else e.host
-            dst = e.host if not e.remote_address.startswith("10.") else e.remote_address
-            m_id = e.mitre_ids[0] if e.mitre_ids else "TRAFFIC"
-            edge_key = (src, dst, m_id)
-            if edge_key not in seen_edges:
-                seen_edges.add(edge_key)
-                edges_list.append(
-                    {
-                        "from": src,
-                        "to": dst,
-                        "label": m_id,
-                        "arrows": "to",
-                        "color": {"color": "#ff5252" if "T1190" in m_id or "T1110" in m_id else "#448aff"},
-                        "font": {"color": "#cfd8dc", "size": 11, "align": "middle"},
-                    }
-                )
+        if not (e.remote_address and e.host):
+            continue
+        m_id = e.mitre_ids[0] if e.mitre_ids else "TRAFFIC"
+
+        host_priv = _is_priv_addr(e.host)
+        rem_priv = _is_priv_addr(e.remote_address)
+
+        if not host_priv and rem_priv:
+            src, dst = e.host, e.remote_address
+            edge_lbl = f"{m_id} Ingress"
+            edge_clr = "#ef4444"
+        elif host_priv and not rem_priv:
+            src, dst = e.host, e.remote_address
+            edge_lbl = f"{m_id} Beacon" if "T1071" in m_id else f"{m_id} Outbound"
+            edge_clr = "#ef4444" if "T1071" in m_id else "#38bdf8"
+        else:
+            src, dst = e.host, e.remote_address
+            edge_lbl = f"{m_id} Lateral"
+            edge_clr = "#f59e0b"
+
+        edge_key = (src, dst, m_id)
+        if edge_key not in seen_edges and src in nodes_map and dst in nodes_map:
+            seen_edges.add(edge_key)
+            edges_list.append(
+                {
+                    "from": src,
+                    "to": dst,
+                    "label": edge_lbl,
+                    "arrows": "to",
+                    "color": {"color": edge_clr},
+                    "font": {"color": "#cfd8dc", "size": 11, "align": "middle"},
+                }
+            )
+
+    # Connect blast radius reachability to critical assets
+    for ch in sorted(internal_hosts)[:3]:
+        edges_list.append(
+            {
+                "from": ch,
+                "to": "dc_net",
+                "label": "Reachable Hop (Blast Radius)",
+                "arrows": "to",
+                "dashes": True,
+                "color": {"color": "#8b5cf6"},
+                "font": {"color": "#c4b5fd", "size": 10},
+            }
+        )
+
+    compromised_hosts = sorted(internal_hosts)
 
     nodes_json = json.dumps(list(nodes_map.values()))
     edges_json = json.dumps(edges_list)
@@ -89,7 +213,7 @@ def build_dashboard_html(
     block_rules_iptables = []
     isolate_commands = []
 
-    for ip in external_ips[:5]:
+    for ip in sorted(external_ips)[:5]:
         block_rules_fortios.append(f'config firewall address\n  edit "BAD_{ip}"\n    set subnet {ip}/32\n  next\nend')
         block_rules_iptables.append(f"iptables -A INPUT -s {ip} -j DROP")
 
@@ -366,9 +490,14 @@ def build_dashboard_html(
 
   <!-- Section 3: Interactive Visual Attack Graph -->
   <div class="section-card">
-    <div class="card-header">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
       <span>Interactive Attack Campaign Graph (NetworkX / Vis.js Canvas)</span>
-      <span style="font-size: 12px; color: var(--text-muted);">Scroll to Zoom | Drag to Pan | Physics Auto-Stabilized</span>
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <button onclick="toggleNetworkLayout()" style="background: #1e293b; border: 1px solid var(--card-border); color: #38bdf8; padding: 4px 10px; border-radius: 4px; font-size: 11px; cursor: pointer; font-family: 'JetBrains Mono', monospace;">
+          Toggle Hierarchical / Force Layout
+        </button>
+        <span style="font-size: 12px; color: var(--text-muted);">Scroll to Zoom | Drag to Pan</span>
+      </div>
     </div>
     <div class="card-body">
       <div id="attack-network"></div>
@@ -439,11 +568,11 @@ def build_dashboard_html(
       edges: new vis.DataSet(rawEdges)
     }};
 
-    const options = {{
+    const defaultOptions = {{
       physics: {{
         barnesHut: {{
           gravitationalConstant: -3500,
-          centralGravity: 0.3,
+          centralGravity: 0.25,
           springLength: 130,
           springConstant: 0.04
         }},
@@ -457,7 +586,39 @@ def build_dashboard_html(
       }}
     }};
 
-    new vis.Network(container, data, options);
+    const network = new vis.Network(container, data, defaultOptions);
+
+    let isHierarchical = false;
+    function toggleNetworkLayout() {{
+      isHierarchical = !isHierarchical;
+      if (isHierarchical) {{
+        network.setOptions({{
+          layout: {{
+            hierarchical: {{
+              enabled: true,
+              direction: "UD",
+              sortMethod: "directed",
+              nodeSpacing: 180,
+              levelSeparation: 120
+            }}
+          }},
+          physics: {{ enabled: false }}
+        }});
+      }} else {{
+        network.setOptions({{
+          layout: {{ hierarchical: {{ enabled: false }} }},
+          physics: {{
+            barnesHut: {{
+              gravitationalConstant: -3500,
+              centralGravity: 0.25,
+              springLength: 130,
+              springConstant: 0.04
+            }},
+            enabled: true
+          }}
+        }});
+      }}
+    }}
   </script>
 
 </body>

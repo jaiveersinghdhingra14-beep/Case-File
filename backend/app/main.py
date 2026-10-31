@@ -1,7 +1,8 @@
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from .api.errors import CaseFileException
 from .api.routes import cases, datasets, demo, health, incidents, stories
@@ -43,7 +44,7 @@ async def casefile_exception_handler(request: Request, exc: CaseFileException):
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     first_err = exc.errors()[0] if exc.errors() else {"msg": "Validation error"}
     msg = first_err.get("msg", "Invalid request body")
-    loc = " -> ".join(str(l) for l in first_err.get("loc", []))
+    loc = " -> ".join(str(item) for item in first_err.get("loc", []))
     detail = f"{msg} at {loc}" if loc else msg
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -60,9 +61,6 @@ app.include_router(stories.router, prefix="/api/v1", tags=["Stories"])
 app.include_router(demo.router, prefix="/api/v1", tags=["Demo"])
 
 # Mount dynamic frontend
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
-
 frontend_dir = settings.BASE_DIR / "frontend"
 if frontend_dir.exists():
     app.mount("/static", StaticFiles(directory=str(frontend_dir)), name="static")

@@ -35,6 +35,34 @@ from ..schemas import EventCategory, NormalizedEvent
 from ..store.duckdb_store import duckdb_store
 
 
+def _is_private_addr(ip: str | None) -> bool:
+    if not ip:
+        return False
+    return ip.startswith(
+        (
+            "10.",
+            "172.16.",
+            "172.17.",
+            "172.18.",
+            "172.19.",
+            "172.20.",
+            "172.21.",
+            "172.22.",
+            "172.23.",
+            "172.24.",
+            "172.25.",
+            "172.26.",
+            "172.27.",
+            "172.28.",
+            "172.29.",
+            "172.30.",
+            "172.31.",
+            "192.168.",
+            "127.",
+        )
+    )
+
+
 def expand_neighborhood(
     dataset_id: str,
     seeds: list[NormalizedEvent],
@@ -42,7 +70,7 @@ def expand_neighborhood(
     max_expanded_events: int = 5000,
 ) -> list[NormalizedEvent]:
     """
-    Expand a 2-hop temporal and lateral neighborhood around the seed events.
+    Expand a 2-hop temporal, lateral, and C2 campaign neighborhood around seed events.
     """
     if not seeds:
         return []
@@ -53,23 +81,28 @@ def expand_neighborhood(
     # Collect unique hosts and time windows from seeds
     all_events_by_id: dict[str, NormalizedEvent] = {s.event_id: s for s in seeds}
 
-    # Group seeds into time clusters per host to minimize SQL queries
+    # Group seeds into time clusters per host/target to minimize SQL queries
     host_time_ranges: dict[str, list[tuple[datetime, datetime]]] = {}
     cross_hosts_to_query: set[tuple[str, datetime, datetime]] = set()
+    external_c2s_to_query: set[tuple[str, datetime, datetime]] = set()
 
     for s in seeds:
         t_start = s.timestamp - timedelta(seconds=window_seconds)
         t_end = s.timestamp + timedelta(seconds=window_seconds)
 
-        if s.host not in host_time_ranges:
-            host_time_ranges[s.host] = []
-        host_time_ranges[s.host].append((t_start, t_end))
+        if s.host:
+            if s.host not in host_time_ranges:
+                host_time_ranges[s.host] = []
+            host_time_ranges[s.host].append((t_start, t_end))
 
-        # Check for cross-host lateral movement targets
-        if s.remote_address and s.remote_address.startswith("10.10.") and s.remote_address != s.host:
-            cross_hosts_to_query.add(
-                (s.remote_address, s.timestamp, s.timestamp + timedelta(seconds=window_seconds * 2))
-            )
+        # Check for cross-host lateral movement targets or shared C2 destinations
+        if s.remote_address and s.remote_address != s.host:
+            if _is_private_addr(s.remote_address):
+                cross_hosts_to_query.add(
+                    (s.remote_address, s.timestamp, s.timestamp + timedelta(seconds=window_seconds * 2))
+                )
+            else:
+                external_c2s_to_query.add((s.remote_address, t_start, t_end))
 
     # Connect to DuckDB
     parquet_glob = duckdb_store.get_dataset_parquet_glob(dataset_id)
@@ -77,7 +110,7 @@ def expand_neighborhood(
 
     # Build union query for bounded time ranges
     conditions = []
-    for host, ranges in list(host_time_ranges.items())[:30]:  # Cap to top 30 active hosts
+    for host, ranges in list(host_time_ranges.items())[:35]:  # Cap to top 35 active hosts
         # Merge overlapping ranges for the same host
         ranges.sort(key=lambda r: r[0])
         merged = []
@@ -89,12 +122,17 @@ def expand_neighborhood(
 
         for m_start, m_end in merged[:5]:  # at most 5 clusters per host
             conditions.append(
-                f"(host = '{host}' AND timestamp >= '{m_start.isoformat()}' AND timestamp <= '{m_end.isoformat()}')"
+                f"((host = '{host}' OR remote_address = '{host}') AND timestamp >= '{m_start.isoformat()}' AND timestamp <= '{m_end.isoformat()}')"
             )
 
-    for target_host, l_start, l_end in list(cross_hosts_to_query)[:15]:
+    for target_host, l_start, l_end in list(cross_hosts_to_query)[:20]:
         conditions.append(
-            f"(host = '{target_host}' AND timestamp >= '{l_start.isoformat()}' AND timestamp <= '{l_end.isoformat()}')"
+            f"((host = '{target_host}' OR remote_address = '{target_host}') AND timestamp >= '{l_start.isoformat()}' AND timestamp <= '{l_end.isoformat()}')"
+        )
+
+    for c2_ip, c_start, c_end in list(external_c2s_to_query)[:15]:
+        conditions.append(
+            f"(remote_address = '{c2_ip}' AND timestamp >= '{c_start.isoformat()}' AND timestamp <= '{c_end.isoformat()}')"
         )
 
     if not conditions:
