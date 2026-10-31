@@ -7,6 +7,7 @@ Chronological Kill Chain Timeline, and Containment Playbook into a single respon
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -44,6 +45,36 @@ def _is_priv_addr(ip: str | None) -> bool:
             "127.",
         )
     )
+
+
+def format_narrative_to_html(text: str) -> str:
+    """Renders structured Markdown narrative headers and bolding into styled HTML."""
+    if not text:
+        return "<p>No narrative synthesized.</p>"
+    lines = text.split("\n")
+    out = []
+    for line in lines:
+        s = line.strip()
+        if not s:
+            continue
+        if s.startswith("### "):
+            out.append(
+                f'<h4 style="color: var(--accent-orange); font-size: 15px; font-weight: 700; margin-top: 14px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px;">{s[4:]}</h4>'
+            )
+        elif s.startswith("## "):
+            out.append(
+                f'<h3 style="color: #38bdf8; font-size: 16px; font-weight: 700; margin-top: 16px; margin-bottom: 8px;">{s[3:]}</h3>'
+            )
+        elif s.startswith("# "):
+            out.append(
+                f'<h2 style="color: #f1f5f9; font-size: 18px; font-weight: 700; margin-top: 18px; margin-bottom: 10px;">{s[2:]}</h2>'
+            )
+        else:
+            formatted_line = re.sub(r"\*\*(.*?)\*\*", r'<strong style="color: #f1f5f9;">\1</strong>', s)
+            out.append(
+                f'<p style="margin-bottom: 10px; color: #cbd5e1; font-size: 14px; line-height: 1.7;">{formatted_line}</p>'
+            )
+    return "\n".join(out)
 
 
 def build_dashboard_html(
@@ -225,6 +256,7 @@ def build_dashboard_html(
     isolate_text = "\n".join(isolate_commands) or "# No endpoints require host isolation"
 
     reduction_pct = (noise_pruned / max(1, total_events_ingested)) * 100.0 if total_events_ingested > 0 else 99.9
+    formatted_narrative = format_narrative_to_html(story.summary)
 
     # 3. HTML Template
     html_content = f"""<!DOCTYPE html>
@@ -435,7 +467,7 @@ def build_dashboard_html(
     </div>
     <div class="card-body">
       <div class="narrative-box">
-        {story.summary}
+        {formatted_narrative}
       </div>
     </div>
   </div>

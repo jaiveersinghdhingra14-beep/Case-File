@@ -94,6 +94,61 @@ def detect_patterns_from_events(events: Sequence[NormalizedEvent]) -> list[Attac
                 )
             )
 
+    # 2b. Check for distributed exploit wave across multiple endpoints (T1190)
+    exploit_events = [e for e in events if any("T1190" in m for m in (e.mitre_ids or []))]
+    if len(exploit_events) >= 3:
+        exp_targets = sorted({e.host for e in exploit_events if e.host})
+        if len(exp_targets) >= 2:
+            start_t = min(e.timestamp for e in exploit_events)
+            end_t = max(e.timestamp for e in exploit_events)
+            dur = max(1.0, (end_t - start_t).total_seconds())
+            patterns.append(
+                AttackPattern(
+                    pattern_id=f"pat_exp_dist_{uuid.uuid4().hex[:6]}",
+                    pattern_type=PatternType.EXPLOIT_WAVE,
+                    title=f"Distributed Enterprise Exploit Wave ({len(exploit_events)} probes across {len(exp_targets)} hosts)",
+                    mitre_id="T1190",
+                    technique_name="Exploit Public-Facing Application",
+                    kill_chain_stage=KillChainStage.INITIAL_ACCESS,
+                    target_host=f"{len(exp_targets)} endpoints ({', '.join(exp_targets[:3])}...)",
+                    source_ip="Multi-Source Adversary Botnet",
+                    attempt_count=len(exploit_events),
+                    start_time=start_t,
+                    end_time=end_t,
+                    duration_seconds=dur,
+                    velocity_attempts_per_sec=round(len(exploit_events) / dur, 2),
+                    evidence_event_ids=[x.event_id for x in exploit_events[:8]],
+                    status=_determine_status([x.command_line or "" for x in exploit_events]),
+                )
+            )
+
+    # 2c. Check for multi-endpoint C2 beaconing activity (T1071)
+    c2_events = [e for e in events if any("T1071" in m for m in (e.mitre_ids or []))]
+    if len(c2_events) >= 3:
+        c2_targets = sorted({e.host for e in c2_events if e.host})
+        start_t = min(e.timestamp for e in c2_events)
+        end_t = max(e.timestamp for e in c2_events)
+        dur = max(1.0, (end_t - start_t).total_seconds())
+        patterns.append(
+            AttackPattern(
+                pattern_id=f"pat_c2_dist_{uuid.uuid4().hex[:6]}",
+                pattern_type=PatternType.C2_BEACONING,
+                title=f"Multi-Endpoint C2 Beaconing Channel ({len(c2_events)} egress sessions across {len(c2_targets)} endpoints)",
+                mitre_id="T1071",
+                technique_name="Application Layer Protocol",
+                kill_chain_stage=KillChainStage.COMMAND_AND_CONTROL,
+                target_host=f"{len(c2_targets)} endpoints ({', '.join(c2_targets[:3])}...)",
+                source_ip="External C2 Infrastructure",
+                attempt_count=len(c2_events),
+                start_time=start_t,
+                end_time=end_t,
+                duration_seconds=dur,
+                velocity_attempts_per_sec=round(len(c2_events) / dur, 2),
+                evidence_event_ids=[x.event_id for x in c2_events[:8]],
+                status=_determine_status([x.command_line or "" for x in c2_events]),
+            )
+        )
+
     # 3. Process grouped bursts
     for (target, src, tactic), evts in grouped.items():
         evts = sorted(evts, key=lambda x: x.timestamp)
