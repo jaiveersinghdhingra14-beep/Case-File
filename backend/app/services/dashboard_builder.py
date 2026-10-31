@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Sequence
+from datetime import datetime, timezone
 from pathlib import Path
 
 from ..schemas import (
@@ -580,7 +581,7 @@ def build_dashboard_html(
           </tr>
 """
 
-    html_content += f"""
+    html_content += """
         </tbody>
       </table>
     </div>
@@ -632,32 +633,193 @@ def build_dashboard_html(
   </div>
 
   <!-- Section 4: Chronological Kill Chain Timeline -->
-  <div class="section-card">
-    <div class="card-header">
-      <span>Chronological Forensic Timeline (Strictly Cited Parquet Events)</span>
-      <span class="badge badge-verified">{len(story.steps)} Verified Steps</span>
-    </div>
-    <div class="card-body">
 """
 
+    # Prepare timeline steps with exact timestamps, elapsed offsets, and stages
+    events_by_id = {e.event_id: e for e in candidate_events}
+    all_ts = [e.timestamp for e in candidate_events if e.timestamp]
     for s in story.steps:
-        t_id = s.technique_id or "T1190"
+        if s.started_at:
+            all_ts.append(s.started_at)
+        if s.ended_at:
+            all_ts.append(s.ended_at)
+        for ev in getattr(s, "evidence", []):
+            if ev.timestamp:
+                all_ts.append(ev.timestamp)
+    campaign_start = min(all_ts) if all_ts else datetime(2026, 10, 23, 8, 51, 0, tzinfo=timezone.utc)
+
+    steps_metadata = []
+    stage_counts = {1: 0, 2: 0, 3: 0, 4: 0}
+
+    for s in story.steps:
+        t_id = (s.technique_id or "T1190").upper()
+        title_l = (s.title or "").lower()
+        desc_l = (s.description or "").lower()
+
+        # Classify Stage 1 to 4
+        if any(x in t_id for x in ["T1046", "T1595", "T1590", "T1040"]) or any(
+            k in title_l or k in desc_l for k in ["recon", "probe", "scan", "discovery", "inbound connection"]
+        ):
+            stg = 1
+            stg_name = "Stage 1: Reconnaissance"
+            stg_clr = "#f59e0b"
+            stg_rgb = "245, 158, 11"
+            stg_icon = "🔍"
+        elif any(x in t_id for x in ["T1059", "T1204", "T1053", "T1543"]) or any(
+            k in title_l or k in desc_l
+            for k in ["interpreter", "script", "command and scripting", "execution", "payload"]
+        ):
+            stg = 3
+            stg_name = "Stage 3: Host Execution"
+            stg_clr = "#f97316"
+            stg_rgb = "249, 115, 22"
+            stg_icon = "💻"
+        elif any(x in t_id for x in ["T1071", "T1133", "T1021", "T1041", "T1571", "T1572"]) or any(
+            k in title_l or k in desc_l for k in ["c2", "beacon", "command and control", "application layer", "lateral"]
+        ):
+            stg = 4
+            stg_name = "Stage 4: Command & Control"
+            stg_clr = "#8b5cf6"
+            stg_rgb = "139, 92, 246"
+            stg_icon = "📡"
+        else:
+            stg = 2
+            stg_name = "Stage 2: Exploit Wave"
+            stg_clr = "#ef4444"
+            stg_rgb = "239, 68, 68"
+            stg_icon = "⚡"
+
+        stage_counts[stg] += 1
+
+        step_timestamps = []
+        if s.started_at:
+            step_timestamps.append(s.started_at)
+        if s.ended_at:
+            step_timestamps.append(s.ended_at)
+        for ev in getattr(s, "evidence", []):
+            if ev.timestamp:
+                step_timestamps.append(ev.timestamp)
+        for eid in getattr(s, "evidence_event_ids", []):
+            if eid in events_by_id and events_by_id[eid].timestamp:
+                step_timestamps.append(events_by_id[eid].timestamp)
+
+        if step_timestamps:
+            s_start = min(step_timestamps)
+            s_end = max(step_timestamps)
+        else:
+            s_start = campaign_start
+            s_end = campaign_start
+
+        offset_sec = max(0, int((s_start - campaign_start).total_seconds()))
+        dur_sec = max(0.0, (s_end - s_start).total_seconds())
+        offset_str = f"T + {offset_sec // 60:02d}:{offset_sec % 60:02d}s"
+        dur_str = f"({dur_sec:.1f}s window)" if dur_sec > 0 else ""
+        time_display = s_start.strftime("%Y-%m-%d %H:%M:%S") + " UTC"
+
         cite_str = (
             ", ".join(e.event_id for e in s.evidence[:4])
             if hasattr(s, "evidence") and s.evidence
             else (", ".join(getattr(s, "evidence_event_ids", [])) or "telemetry_verified")
         )
-        html_content += f"""
-      <div class="timeline-step">
-        <div class="timeline-time step-time">Oct 23, 2026 - UTC</div>
-        <div class="timeline-content">
-          <div class="timeline-title">
-            <span>{s.title}</span>
-            <span class="badge badge-mitre">{t_id}</span>
-            <span class="badge badge-verified">VERIFIED</span>
+
+        steps_metadata.append(
+            {
+                "step": s,
+                "stage": stg,
+                "stage_name": stg_name,
+                "stage_clr": stg_clr,
+                "stage_rgb": stg_rgb,
+                "stage_icon": stg_icon,
+                "time_display": time_display,
+                "offset_str": offset_str,
+                "dur_str": dur_str,
+                "t_id": t_id,
+                "cite_str": cite_str,
+            }
+        )
+
+    html_content += f"""
+  <div class="section-card">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+      <div>
+        <span style="font-weight: 700;">Chronological Forensic Timeline (Strictly Cited Parquet Events)</span>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+          4 Distinct Attack Stages with micro-timestamps and forensic event citations
+        </div>
+      </div>
+      <span class="badge badge-verified">{len(story.steps)} Verified Steps</span>
+    </div>
+    <div class="card-body">
+
+      <!-- 4-Stage Kill Chain Stepper Bar -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-bottom: 20px;">
+        <div onclick="filterTimelineStage(1, this)" class="stage-stepper-card" style="background: rgba(245, 158, 11, 0.08); border: 1px solid #f59e0b; border-radius: 6px; padding: 14px; cursor: pointer; transition: transform 0.15s, box-shadow 0.15s;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span style="font-size: 11px; font-weight: 700; color: #f59e0b; text-transform: uppercase;">🔍 Stage 1: Recon</span>
+            <span style="background: #f59e0b; color: #000; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px;">{stage_counts[1]} Steps</span>
           </div>
+          <div style="font-size: 12px; color: #cbd5e1; line-height: 1.4;">External port scanning & service discovery probes (T1046)</div>
+        </div>
+
+        <div onclick="filterTimelineStage(2, this)" class="stage-stepper-card" style="background: rgba(239, 68, 68, 0.08); border: 1px solid #ef4444; border-radius: 6px; padding: 14px; cursor: pointer; transition: transform 0.15s, box-shadow 0.15s;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span style="font-size: 11px; font-weight: 700; color: #ef4444; text-transform: uppercase;">⚡ Stage 2: Exploit Wave</span>
+            <span style="background: #ef4444; color: #fff; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px;">{stage_counts[2]} Steps</span>
+          </div>
+          <div style="font-size: 12px; color: #cbd5e1; line-height: 1.4;">Coordinated public-facing application exploits (T1190)</div>
+        </div>
+
+        <div onclick="filterTimelineStage(3, this)" class="stage-stepper-card" style="background: rgba(249, 115, 22, 0.08); border: 1px solid #f97316; border-radius: 6px; padding: 14px; cursor: pointer; transition: transform 0.15s, box-shadow 0.15s;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span style="font-size: 11px; font-weight: 700; color: #f97316; text-transform: uppercase;">💻 Stage 3: Execution</span>
+            <span style="background: #f97316; color: #000; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px;">{stage_counts[3]} Steps</span>
+          </div>
+          <div style="font-size: 12px; color: #cbd5e1; line-height: 1.4;">Adversary shell/interpreter execution on host (T1059)</div>
+        </div>
+
+        <div onclick="filterTimelineStage(4, this)" class="stage-stepper-card" style="background: rgba(139, 92, 246, 0.08); border: 1px solid #8b5cf6; border-radius: 6px; padding: 14px; cursor: pointer; transition: transform 0.15s, box-shadow 0.15s;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span style="font-size: 11px; font-weight: 700; color: #8b5cf6; text-transform: uppercase;">📡 Stage 4: C2 Beacon</span>
+            <span style="background: #8b5cf6; color: #fff; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px;">{stage_counts[4]} Steps</span>
+          </div>
+          <div style="font-size: 12px; color: #cbd5e1; line-height: 1.4;">Outbound Command & Control beacon sessions (T1071)</div>
+        </div>
+      </div>
+
+      <!-- Quick Stage Filter Pills -->
+      <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 20px; flex-wrap: wrap;">
+        <span style="font-size: 12px; color: var(--text-muted); font-weight: 600;">Stage Filter:</span>
+        <button id="btn-filter-all" onclick="filterTimelineStage(0, this)" class="btn" style="border-color: #38bdf8; color: #38bdf8;">Show All ({len(story.steps)} Steps)</button>
+        <button id="btn-filter-1" onclick="filterTimelineStage(1, this)" class="btn">Stage 1: Recon ({stage_counts[1]})</button>
+        <button id="btn-filter-2" onclick="filterTimelineStage(2, this)" class="btn">Stage 2: Exploit Wave ({stage_counts[2]})</button>
+        <button id="btn-filter-3" onclick="filterTimelineStage(3, this)" class="btn">Stage 3: Execution ({stage_counts[3]})</button>
+        <button id="btn-filter-4" onclick="filterTimelineStage(4, this)" class="btn">Stage 4: C2 ({stage_counts[4]})</button>
+      </div>
+"""
+
+    for meta in steps_metadata:
+        s = meta["step"]
+        html_content += f"""
+      <div class="timeline-step" data-stage="{meta["stage"]}">
+        <div class="timeline-time step-time">
+          <div style="color: #f1f5f9; font-weight: 600; font-size: 12px;">{meta["time_display"]}</div>
+          <div style="color: #38bdf8; font-size: 11px; margin-top: 3px; font-family: 'JetBrains Mono', monospace;">
+            {meta["offset_str"]} {meta["dur_str"]}
+          </div>
+        </div>
+        <div class="timeline-content">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; flex-wrap: wrap; gap: 6px;">
+            <span style="background: rgba({meta["stage_rgb"]}, 0.15); color: {meta["stage_clr"]}; border: 1px solid {meta["stage_clr"]}; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;">
+              {meta["stage_icon"]} {meta["stage_name"].upper()}
+            </span>
+            <div style="display: flex; gap: 6px; align-items: center;">
+              <span class="badge badge-mitre">{meta["t_id"]}</span>
+              <span class="badge badge-verified">VERIFIED</span>
+            </div>
+          </div>
+          <div class="timeline-title" style="font-size: 15px; font-weight: 600; color: #ffffff;">{s.title}</div>
           <div class="timeline-desc">{s.description}</div>
-          <div class="timeline-cite">Citing Forensics: [{cite_str}]</div>
+          <div class="timeline-cite">Citing Forensics: [{meta["cite_str"]}]</div>
         </div>
       </div>
 """
@@ -823,6 +985,27 @@ def build_dashboard_html(
         btn.style.color = "#38bdf8";
       }}
       network.fit();
+    }}
+
+    function filterTimelineStage(stageNum, btnElem) {{
+      const allSteps = document.querySelectorAll('.timeline-step');
+      allSteps.forEach(step => {{
+        if (stageNum === 0 || step.getAttribute('data-stage') === String(stageNum)) {{
+          step.style.display = 'flex';
+        }} else {{
+          step.style.display = 'none';
+        }}
+      }});
+      document.querySelectorAll('.btn').forEach(b => {{
+        if (b.id && b.id.startsWith('btn-filter-')) {{
+          b.style.borderColor = 'var(--card-border)';
+          b.style.color = 'var(--text)';
+        }}
+      }});
+      if (btnElem && btnElem.classList.contains('btn')) {{
+        btnElem.style.borderColor = '#38bdf8';
+        btnElem.style.color = '#38bdf8';
+      }}
     }}
   </script>
 

@@ -1,0 +1,73 @@
+# CaseFile v2 - Sigma-Compatible Detection Rules (PRD Bonus B-4)
+# Allows security analysts to define new detection signatures via YAML without modifying source code.
+
+rules:
+  - id: sigma_t1190_exploit_wave
+    title: "Distributed Enterprise Exploit Wave"
+    description: "Detects coordinated vulnerability exploitation attempts targeting public-facing web applications across multiple enterprise hosts."
+    mitre_id: "T1190"
+    technique_name: "Exploit Public-Facing Application"
+    kill_chain_stage: "initial_access"
+    pattern_type: "exploit_wave"
+    severity: "critical"
+    condition:
+      min_events: 3
+      match_mitre: ["T1190"]
+      match_keywords: ["exploit", "cve", "vuln", "overflow", "traversal"]
+      multi_target_threshold: 2
+
+  - id: sigma_t1046_recon_sweep
+    title: "Multi-Host Reconnaissance Sweep"
+    description: "Detects an external entity probing ports and services across 3 or more internal network hosts within a short time window."
+    mitre_id: "T1046"
+    technique_name: "Network Service Discovery"
+    kill_chain_stage: "reconnaissance"
+    pattern_type: "recon_sweep"
+    severity: "medium"
+    condition:
+      min_events: 3
+      match_mitre: ["T1046", "T1595"]
+      match_keywords: ["scan", "probe", "syn", "port", "recon"]
+      multi_target_threshold: 3
+
+  - id: sigma_t1071_c2_beaconing
+    title: "Persistent External C2 Beaconing"
+    description: "Detects internal endpoints establishing continuous or high-frequency application-layer communication with external C2 nodes."
+    mitre_id: "T1071"
+    technique_name: "Application Layer Protocol"
+    kill_chain_stage: "command_and_control"
+    pattern_type: "c2_beaconing"
+    severity: "high"
+    condition:
+      min_events: 2
+      match_mitre: ["T1071"]
+      match_keywords: ["c2", "beacon", "outbound", "session", "dns tunnel"]
+      multi_target_threshold: 1
+
+  - id: sigma_t1110_brute_force
+    title: "High-Velocity Authentication Brute Force"
+    description: "Detects rapid bursts of failed logon attempts against a single workstation or server."
+    mitre_id: "T1110"
+    technique_name: "Brute Force"
+    kill_chain_stage: "credential_access"
+    pattern_type: "brute_force"
+    severity: "high"
+    condition:
+      min_events: 3
+      match_mitre: ["T1110"]
+      match_keywords: ["failed", "invalid password", "auth fail", "denied"]
+      multi_target_threshold: 1
+
+  - id: sigma_t1059_command_execution
+    title: "Suspicious Interpreter / Script Execution"
+    description: "Detects command-line or scripting interpreters spawned unexpectedly on internal endpoints."
+    mitre_id: "T1059"
+    technique_name: "Command and Scripting Interpreter"
+    kill_chain_stage: "execution"
+    pattern_type: "lateral_movement"
+    severity: "high"
+    condition:
+      min_events: 1
+      match_mitre: ["T1059"]
+      match_keywords: ["powershell", "cmd.exe", "bash", "sh", "eval"]
+      multi_target_threshold: 1

@@ -14,9 +14,31 @@ import uuid
 from collections import defaultdict
 from collections.abc import Sequence
 from datetime import datetime, timezone
+from pathlib import Path
+
+import yaml
 
 from ..schemas import AttackPattern, KillChainStage, NormalizedEvent, PatternType
 from ..store.duckdb_store import DuckDBStore
+
+
+def load_yaml_detection_rules() -> list[dict]:
+    """
+    Loads config-driven detection rules from YAML files in rules/ directory (PRD Bonus B-4).
+    Enables adding new detection signatures via YAML without modifying Python source code.
+    """
+    rules_dir = Path(__file__).resolve().parent.parent.parent.parent / "rules"
+    rules: list[dict] = []
+    if rules_dir.exists() and rules_dir.is_dir():
+        for yml_path in list(rules_dir.glob("*.yaml")) + list(rules_dir.glob("*.yml")):
+            try:
+                with open(yml_path, encoding="utf-8") as f:
+                    content = yaml.safe_load(f)
+                    if isinstance(content, dict) and "rules" in content:
+                        rules.extend(content["rules"])
+            except Exception:  # noqa: BLE001, S110
+                pass
+    return rules
 
 
 def _determine_status(command_lines: list[str]) -> str:
@@ -148,6 +170,62 @@ def detect_patterns_from_events(events: Sequence[NormalizedEvent]) -> list[Attac
                 status=_determine_status([x.command_line or "" for x in c2_events]),
             )
         )
+
+    # 2d. Evaluate Config-Driven Detection Rules from rules/*.yaml (PRD Bonus B-4)
+    yaml_rules = load_yaml_detection_rules()
+    for rule in yaml_rules:
+        cond = rule.get("condition", {})
+        min_evts = cond.get("min_events", 2)
+        match_mitre = set(cond.get("match_mitre", []))
+        match_keywords = [k.lower() for k in cond.get("match_keywords", [])]
+
+        matched_evts = []
+        for e in events:
+            has_mitre = any(m in match_mitre for m in (e.mitre_ids or []))
+            cmd_l = (e.command_line or "").lower()
+            sum_l = (e.summary or "").lower()
+            has_kw = any(k in cmd_l or k in sum_l for k in match_keywords)
+            if has_mitre or has_kw:
+                matched_evts.append(e)
+
+        if len(matched_evts) >= min_evts:
+            r_targets = sorted({e.host for e in matched_evts if e.host})
+            multi_thresh = cond.get("multi_target_threshold", 1)
+            if len(r_targets) >= multi_thresh:
+                r_mitre = rule.get("mitre_id", "T1000")
+                if not any(p.mitre_id == r_mitre for p in patterns):
+                    evts_s = sorted(matched_evts, key=lambda x: x.timestamp)
+                    start_t = evts_s[0].timestamp
+                    end_t = evts_s[-1].timestamp
+                    dur = max(1.0, (end_t - start_t).total_seconds())
+                    stage_val = rule.get("kill_chain_stage", "initial_access")
+                    try:
+                        kc_stage = KillChainStage(stage_val)
+                    except ValueError:
+                        kc_stage = KillChainStage.INITIAL_ACCESS
+                    patterns.append(
+                        AttackPattern(
+                            pattern_id=f"pat_yaml_{uuid.uuid4().hex[:6]}",
+                            pattern_type=PatternType.EXPLOIT_WAVE
+                            if "exploit" in rule.get("pattern_type", "")
+                            else PatternType.ANOMALOUS_BURST,
+                            title=f"[Config Rule] {rule.get('title', 'Custom Attack Pattern')} ({len(matched_evts)} events)",
+                            mitre_id=r_mitre,
+                            technique_name=rule.get("technique_name", "Signature Detection"),
+                            kill_chain_stage=kc_stage,
+                            target_host=f"{len(r_targets)} hosts ({', '.join(r_targets[:3])}...)"
+                            if len(r_targets) > 1
+                            else (r_targets[0] if r_targets else "N/A"),
+                            source_ip="Adversary Ingress",
+                            attempt_count=len(matched_evts),
+                            start_time=start_t,
+                            end_time=end_t,
+                            duration_seconds=dur,
+                            velocity_attempts_per_sec=round(len(matched_evts) / dur, 2),
+                            evidence_event_ids=[x.event_id for x in evts_s[:8]],
+                            status=_determine_status([x.command_line or "" for x in evts_s]),
+                        )
+                    )
 
     # 3. Process grouped bursts
     for (target, src, tactic), evts in grouped.items():
