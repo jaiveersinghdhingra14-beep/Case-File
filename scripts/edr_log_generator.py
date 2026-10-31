@@ -441,7 +441,7 @@ class StdoutSink:
 
 class FileSink:
     def __init__(self, path):
-        self.f = open(path, "a", encoding="utf-8")
+        self.f = open(path, "a", encoding="utf-8")  # noqa: SIM115
 
     def send(self, line):
         self.f.write(line + "\n")
@@ -476,7 +476,7 @@ class SyslogSink:
     def close(self):
         try:
             self.sock.close()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
 
@@ -503,7 +503,7 @@ class HttpSink:
         try:
             with urllib.request.urlopen(req, context=self.ctx, timeout=10) as r:
                 r.read()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"[http] send failed: {e}", file=sys.stderr)
 
     def close(self):
