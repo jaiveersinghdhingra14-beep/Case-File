@@ -165,10 +165,20 @@ def cmd_test(args: argparse.Namespace) -> int:
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
-    """Launches the FastAPI backend server."""
+    """Launches the FastAPI backend server and opens the dynamic command center in browser."""
     import uvicorn
 
-    print("\n[CaseFile v2] Launching FastAPI REST API on http://127.0.0.1:8000 ...")
+    print("\n" + "=" * 80)
+    print("   CaseFile v2 - Autonomous SOC Incident Command Center")
+    print("=" * 80)
+    print("Server running on    : http://127.0.0.1:8000")
+    print("Dynamic Web Console  : http://127.0.0.1:8000/")
+    print("Interactive API Docs : http://127.0.0.1:8000/docs")
+    print("=" * 80 + "\n")
+    try:
+        webbrowser.open("http://127.0.0.1:8000")
+    except Exception as e:  # noqa: BLE001
+        print(f"[NOTE] Open browser manually: http://127.0.0.1:8000 ({e})")
     uvicorn.run("backend.app.main:app", host="127.0.0.1", port=8000, reload=True)
     return 0
 
@@ -269,20 +279,28 @@ def cmd_run_all(args: argparse.Namespace) -> int:
     print(f"  Candidate Subgraph: {len(expanded)} events (Pruned {noise_pruned:,} benign noise events)")
     print(f"  Incident Correlation Time: {time.perf_counter() - t0_corr:.3f}s")
 
+    # If pattern detector from parquet returned 0, detect from expanded candidate events
+    if not patterns and expanded:
+        patterns = detect_attack_patterns(dataset_id=dataset_id, events=expanded)
+        print(f"  Candidate Subgraph Patterns Detected: {len(patterns)} burst clusters")
+
     # 4. Synthesize Story & Verify Citations
-    print(f"\n[4/5] Synthesizing Narrative via Gemini ({settings.LLM_MODEL}) & 4-Check Verification...")
+    active_provider = settings.LLM_PROVIDER.upper()
+    active_model = settings.GROQ_MODEL if settings.LLM_PROVIDER == "groq" else settings.LLM_MODEL
+    active_key = (settings.GROQ_API_KEY if settings.LLM_PROVIDER == "groq" else settings.GEMINI_API_KEY).strip()
+    model_label = f"{active_model} (SOC Analyst AI)" if active_key else "MockLLM-Verified"
+
+    print(f"\n[4/5] Synthesizing Narrative via {active_provider} ({active_model}) & 4-Check Verification...")
     t0_story = time.perf_counter()
     draft, usage = write_story_for_events(
         expanded,
         chunk_size=args.chunk_size,
-        model_name=settings.LLM_MODEL,
+        model_name=active_model,
         patterns=patterns,
     )
     verified_steps, unsupported = verify_all_steps(draft.steps, events_by_id)
 
     story_id = db.generate_id("story_")
-    active_key = settings.GEMINI_API_KEY.strip()
-    model_label = f"{settings.LLM_MODEL} (SOC Analyst AI)" if active_key else "MockLLM-Verified"
 
     story = Story(
         story_id=story_id,

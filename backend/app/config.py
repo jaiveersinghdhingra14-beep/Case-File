@@ -9,10 +9,12 @@ class Settings(BaseSettings):
     DEBUG: bool = False
 
     # LLM Settings
-    LLM_PROVIDER: str = "gemini"
+    LLM_PROVIDER: str = "groq"
+    GROQ_API_KEY: str = ""
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"
     GEMINI_API_KEY: str = ""
     LLM_MODEL: str = "gemini-3.8-flash"
-    USE_MOCK_LLM: bool = True
+    USE_MOCK_LLM: bool = False
     MAX_LLM_CALLS: int = 200
 
     # Storage Paths

@@ -58,3 +58,18 @@ app.include_router(incidents.router, prefix="/api/v1", tags=["Incidents"])
 app.include_router(cases.router, prefix="/api/v1", tags=["Cases"])
 app.include_router(stories.router, prefix="/api/v1", tags=["Stories"])
 app.include_router(demo.router, prefix="/api/v1", tags=["Demo"])
+
+# Mount dynamic frontend
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+
+frontend_dir = settings.BASE_DIR / "frontend"
+if frontend_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(frontend_dir)), name="static")
+
+    @app.get("/", include_in_schema=False)
+    async def serve_index():
+        index_file = frontend_dir / "index.html"
+        if index_file.exists():
+            return FileResponse(index_file)
+        return {"status": "CaseFile API running. Place index.html in frontend/"}

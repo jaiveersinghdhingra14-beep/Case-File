@@ -228,14 +228,14 @@ def detect_attack_patterns(
             remote_address, 
             mitre_ids, 
             category, 
-            command_line, 
+            LIST(command_line) as cmd_lines, 
             COUNT(*) as attempt_count,
             MIN(timestamp) as start_t,
             MAX(timestamp) as end_t,
             LIST(event_id) as event_ids
         FROM read_parquet('{store.base_dir}/{dataset_id}/*.parquet')
         WHERE mitre_ids IS NOT NULL AND ARRAY_LENGTH(mitre_ids) > 0
-        GROUP BY host, remote_address, mitre_ids, category, command_line
+        GROUP BY host, remote_address, mitre_ids, category
         HAVING COUNT(*) >= 2
         ORDER BY attempt_count DESC
         LIMIT 50
@@ -247,7 +247,7 @@ def detect_attack_patterns(
 
     patterns: list[AttackPattern] = []
     for r in rows:
-        host, r_addr, m_ids, cat, cmd, cnt, st, et, e_ids = r
+        host, r_addr, m_ids, cat, cmd_lines, cnt, st, et, e_ids = r
         m_id = m_ids[0] if m_ids else "T1190"
         st_dt = datetime.fromisoformat(str(st)).replace(tzinfo=timezone.utc)
         et_dt = datetime.fromisoformat(str(et)).replace(tzinfo=timezone.utc)
@@ -290,7 +290,7 @@ def detect_attack_patterns(
                 duration_seconds=dur,
                 velocity_attempts_per_sec=round(cnt / dur, 2),
                 evidence_event_ids=list(e_ids)[:8] if e_ids else [],
-                status=_determine_status([cmd or ""]),
+                status=_determine_status([c or "" for c in (cmd_lines or [])]),
             )
         )
 

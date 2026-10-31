@@ -1,7 +1,9 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Query, status
+from fastapi import APIRouter, BackgroundTasks, Query, Response, status
+from pydantic import BaseModel
 
+from ...config import settings
 from ...schemas import (
     Case,
     CaseAccepted,
@@ -19,7 +21,9 @@ from ...schemas import (
 )
 from ...services.correlator import correlate_incident_paths
 from ...services.expander import expand_neighborhood
+from ...services.pattern_detector import detect_attack_patterns
 from ...services.reducer import get_top_k_seeds
+from ...services.report_generator import generate_incident_report_markdown
 from ...store import db
 from ...store.duckdb_store import duckdb_store
 from ..errors import not_found
@@ -220,4 +224,62 @@ def get_comparison(case_id: str) -> ComparisonResponse:
         ground_truth_steps=0,
         results=results,
         generated_at=datetime.now(timezone.utc),
+    )
+
+
+class RawFileInfo(BaseModel):
+    name: str
+    path: str
+    size_mb: float
+
+
+@router.get("/cases/available_raw", response_model=list[RawFileInfo])
+def get_available_raw_files() -> list[RawFileInfo]:
+    """Lists raw log files available in data/raw for immediate one-click analysis."""
+    raw_dir = settings.BASE_DIR / "data" / "raw"
+    if not raw_dir.exists():
+        return []
+    results = []
+    for f in raw_dir.glob("*.*"):
+        if f.is_file() and not f.name.startswith("."):
+            results.append(
+                RawFileInfo(
+                    name=f.name,
+                    path=str(f.relative_to(settings.BASE_DIR)).replace("\\", "/"),
+                    size_mb=round(f.stat().st_size / (1024 * 1024), 2),
+                )
+            )
+    return sorted(results, key=lambda x: x.size_mb, reverse=True)
+
+
+@router.get("/cases/{case_id}/report", response_class=Response)
+def get_case_report(case_id: str) -> Response:
+    """Generates and downloads the NIST/SANS formatted Incident Response Report."""
+    case = db.get_case(case_id)
+    if not case:
+        raise not_found(f"Case {case_id} not found.")
+
+    stories = db.list_stories(case_id=case_id)
+    story = stories[0] if stories else None
+    if not story:
+        raise not_found(f"No story found for Case {case_id}.")
+
+    patterns = detect_attack_patterns(dataset_id=case.dataset_id)
+    seeds = get_top_k_seeds(case.dataset_id, top_k=30, min_rarity_score=0.1)
+    expanded = expand_neighborhood(case.dataset_id, seeds, window_seconds=120)
+    incidents = db.list_incidents(case.dataset_id)
+
+    report_md = generate_incident_report_markdown(
+        case=case,
+        story=story,
+        patterns=patterns,
+        incidents=incidents,
+        candidate_events=expanded,
+    )
+
+    filename = f"Incident_Report_{case.case_id}.md"
+    return Response(
+        content=report_md,
+        media_type="text/markdown",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
