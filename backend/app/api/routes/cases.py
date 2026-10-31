@@ -7,6 +7,7 @@ from ...schemas import (
     CaseAccepted,
     CaseCreateRequest,
     CaseList,
+    CaseStats,
     CaseStatus,
     ComparisonResponse,
     EventCategory,
@@ -16,11 +17,67 @@ from ...schemas import (
     MethodResult,
     NormalizedEvent,
 )
+from ...services.correlator import correlate_incident_paths
+from ...services.expander import expand_neighborhood
+from ...services.reducer import get_top_k_seeds
 from ...store import db
 from ...store.duckdb_store import duckdb_store
 from ..errors import not_found
 
 router = APIRouter()
+
+
+def run_case_pipeline(case_id: str, req: CaseCreateRequest) -> None:
+    case = db.get_case(case_id)
+    if not case:
+        return
+
+    try:
+        case.status = CaseStatus.correlating
+        db.save_case(case)
+
+        # 1. Top-K Seed Selection
+        seeds = get_top_k_seeds(case.dataset_id, top_k=req.seed_top_k, min_rarity_score=0.1)
+
+        # 2. 2-Hop Graph Expansion
+        expanded = expand_neighborhood(
+            case.dataset_id,
+            seeds,
+            window_seconds=req.expansion_window_seconds,
+            max_expanded_events=5000,
+        )
+
+        # 3. Correlate Incident Paths
+        ds = db.get_dataset(case.dataset_id)
+        all_hosts = ds.hosts if ds else None
+        incidents = correlate_incident_paths(case.dataset_id, expanded, all_known_hosts=all_hosts)
+
+        # 4. Save Incidents
+        for inc in incidents:
+            db.save_incident(inc)
+
+        # 5. Populate Case Stats
+        ds_total = ds.events_total if ds else len(expanded)
+        comp_hosts = sorted(list({e.host for e in expanded}))
+        sources = sorted(list({e.source for e in expanded}))
+
+        case.stats = CaseStats(
+            events_ingested=ds_total,
+            events_after_noise_filter=len(expanded),
+            noise_removed=max(0, ds_total - len(expanded)),
+            groups=len(incidents),
+            hosts=comp_hosts[:25],
+            sources=sources,
+        )
+        case.status = CaseStatus.ready
+        case.updated_at = datetime.now(timezone.utc)
+        db.save_case(case)
+
+    except Exception as e:
+        case.status = CaseStatus.failed
+        case.error_message = str(e)
+        case.updated_at = datetime.now(timezone.utc)
+        db.save_case(case)
 
 
 @router.post("/cases", response_model=CaseAccepted, status_code=status.HTTP_202_ACCEPTED)
@@ -47,7 +104,7 @@ def create_case(req: CaseCreateRequest, background_tasks: BackgroundTasks) -> Ca
     )
     db.save_case(case)
 
-    # In Step C & D, background_tasks.add_task(run_case_pipeline, case_id) will be wired
+    background_tasks.add_task(run_case_pipeline, case_id, req)
     return CaseAccepted(case_id=case_id, status=case.status)
 
 

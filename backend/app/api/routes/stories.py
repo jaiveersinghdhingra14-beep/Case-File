@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import time
 
 from fastapi import APIRouter, BackgroundTasks, status
 
@@ -7,6 +8,7 @@ from ...schemas import (
     CaseStatus,
     EvaluateRequest,
     Evaluation,
+    NormalizedEvent,
     ReportResponse,
     ReviewOutcome,
     Story,
@@ -18,10 +20,65 @@ from ...schemas import (
     StorySummary,
     TokenUsage,
 )
+from ...services.expander import expand_neighborhood
+from ...services.reducer import get_top_k_seeds
+from ...services.story_writer import write_story_for_events
+from ...services.verifier import verify_all_steps
 from ...store import db
 from ..errors import already_in_progress, no_ground_truth, not_found, wrong_state
 
 router = APIRouter()
+
+
+def run_story_pipeline(story_id: str, case_id: str, req: StoryCreateRequest) -> None:
+    story = db.get_story(story_id)
+    if not story:
+        return
+
+    case = db.get_case(case_id)
+    if not case:
+        story.status = StoryStatus.failed
+        story.failure_reason = f"Case {case_id} not found."
+        db.save_story(story)
+        return
+
+    try:
+        t0 = time.perf_counter()
+        story.status = StoryStatus.generating
+        db.save_story(story)
+
+        # 1. Query candidate events
+        seeds = get_top_k_seeds(case.dataset_id, top_k=50, min_rarity_score=0.1)
+        candidate_events = expand_neighborhood(case.dataset_id, seeds, window_seconds=120)
+
+        events_by_id = {e.event_id: e for e in candidate_events}
+
+        # 2. Write Story drafts
+        draft, usage = write_story_for_events(candidate_events, chunk_size=req.chunk_size)
+
+        # 3. Deterministic 4-Check Verification
+        story.status = StoryStatus.verifying
+        db.save_story(story)
+
+        verified_steps, unsupported = verify_all_steps(draft.steps, events_by_id)
+
+        # 4. Final Story Assembly
+        t_elapsed = time.perf_counter() - t0
+        story.status = StoryStatus.awaiting_review
+        story.summary = draft.summary
+        story.steps = verified_steps
+        story.unsupported_claims = unsupported
+        story.assumptions = draft.assumptions
+        story.usage = usage
+        story.duration_seconds = round(t_elapsed, 2)
+        story.updated_at = datetime.now(timezone.utc)
+        db.save_story(story)
+
+    except Exception as e:
+        story.status = StoryStatus.failed
+        story.failure_reason = str(e)
+        story.updated_at = datetime.now(timezone.utc)
+        db.save_story(story)
 
 
 @router.post("/cases/{case_id}/stories", response_model=StoryAccepted, status_code=status.HTTP_202_ACCEPTED)
@@ -64,7 +121,7 @@ def create_story(case_id: str, req: StoryCreateRequest, background_tasks: Backgr
     )
     db.save_story(story)
 
-    # In Step E, background_tasks.add_task(run_story_writer, story_id) will be wired
+    background_tasks.add_task(run_story_pipeline, story_id, case_id, req)
     return StoryAccepted(story_id=story_id, status=story.status)
 
 
