@@ -56,6 +56,8 @@ def get_top_k_seeds(
     """
     parquet_glob = duckdb_store.get_dataset_parquet_glob(dataset_id)
     con = duckdb.connect(":memory:")
+    con.execute("PRAGMA threads = 8;")
+    con.execute("PRAGMA preserve_insertion_order = false;")
 
     # 1. First, check if Parquet files exist for this dataset
     if not duckdb_store.has_parquet_data(dataset_id):
@@ -144,8 +146,8 @@ def get_top_k_seeds(
         return []
 
     events: list[NormalizedEvent] = []
-    for _, row in df.iterrows():
-        rec = row.to_dict()
+    records = df.to_dict(orient="records")
+    for rec in records:
 
         # Handle mitre_ids
         mitre_raw = rec.get("mitre_ids")

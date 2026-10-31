@@ -104,9 +104,17 @@ def expand_neighborhood(
             else:
                 external_c2s_to_query.add((s.remote_address, t_start, t_end))
 
-    # Connect to DuckDB
+    seed_timestamps = [s.timestamp for s in seeds if s.timestamp]
+    if not seed_timestamps:
+        return seeds
+    global_min_time = min(seed_timestamps) - timedelta(seconds=window_seconds * 2)
+    global_max_time = max(seed_timestamps) + timedelta(seconds=window_seconds * 2)
+
+    # Connect to DuckDB with multi-core parallel query execution
     parquet_glob = duckdb_store.get_dataset_parquet_glob(dataset_id)
     con = duckdb.connect(":memory:")
+    con.execute("PRAGMA threads = 8;")
+    con.execute("PRAGMA preserve_insertion_order = false;")
 
     # Build union query for bounded time ranges
     conditions = []
@@ -163,7 +171,9 @@ def expand_neighborhood(
         byte_offset,
         byte_length
     FROM read_parquet('{parquet_glob}')
-    WHERE {where_filter}
+    WHERE timestamp >= '{global_min_time.isoformat()}'
+      AND timestamp <= '{global_max_time.isoformat()}'
+      AND ({where_filter})
     ORDER BY timestamp ASC
     LIMIT {max_expanded_events};
     """
@@ -171,8 +181,8 @@ def expand_neighborhood(
     df = con.execute(query).fetchdf()
     con.close()
 
-    for _, row in df.iterrows():
-        rec = row.to_dict()
+    records = df.to_dict(orient="records")
+    for rec in records:
         eid = str(rec.get("event_id"))
         if eid in all_events_by_id:
             continue
