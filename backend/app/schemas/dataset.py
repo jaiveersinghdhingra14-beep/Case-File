@@ -20,6 +20,26 @@ class BenchmarkReport(BaseModel):
     total_seconds: float = Field(description="Overall runtime across all stages.")
     reduction_ratio: float = Field(description="Input raw events divided by surviving candidates (e.g. 500x).")
 
+    @property
+    def rows_in(self) -> int:
+        return self.stages[0].rows_in if self.stages else 0
+
+    @property
+    def rows_out(self) -> int:
+        return self.stages[0].rows_out if self.stages else 0
+
+    @property
+    def elapsed_time_seconds(self) -> float:
+        return self.total_seconds
+
+    @property
+    def throughput_mb_s(self) -> float:
+        return self.stages[0].throughput_mb_s if self.stages else 0.0
+
+    @property
+    def peak_memory_rss_mb(self) -> float:
+        return self.stages[0].peak_rss_mb if self.stages else 0.0
+
 
 class DatasetCreateRequest(BaseModel):
     path: str = Field(description="Local path to raw log file or directory (no upload).")

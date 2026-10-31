@@ -170,14 +170,20 @@ def cmd_ingest(args: argparse.Namespace) -> str | None:
     )
     print()  # newline after streaming progress
 
+    rows_in = getattr(report, "rows_in", 0)
+    rows_out = getattr(report, "rows_out", 0)
+    elapsed = getattr(report, "elapsed_time_seconds", getattr(report, "total_seconds", 0.0))
+    throughput = getattr(report, "throughput_mb_s", 0.0)
+    peak_rss = getattr(report, "peak_memory_rss_mb", 0.0)
+
     print("\n" + "=" * 80)
     print("   Ingestion Complete & Benchmark Verified")
     print("=" * 80)
-    print(f"Total Rows In   : {report.rows_in:,}")
-    print(f"Total Rows Out  : {report.rows_out:,}")
-    print(f"Elapsed Time    : {report.elapsed_time_seconds:.2f}s")
-    print(f"Throughput      : {report.throughput_mb_s:.2f} MB/s")
-    print(f"Peak Memory RSS : {report.peak_memory_rss_mb:.1f} MB (RAM budget: < 8,000 MB)")
+    print(f"Total Rows In   : {rows_in:,}")
+    print(f"Total Rows Out  : {rows_out:,}")
+    print(f"Elapsed Time    : {elapsed:.2f}s")
+    print(f"Throughput      : {throughput:.2f} MB/s")
+    print(f"Peak Memory RSS : {peak_rss:.1f} MB (RAM budget: < 8,000 MB)")
     print(f"Storage Path    : data/parquet/{dataset_id}/")
     print("=" * 80 + "\n")
     return dataset_id
