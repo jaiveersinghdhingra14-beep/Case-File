@@ -28,9 +28,13 @@ class CheckResult(BaseModel):
 
 class StoryStepDraft(BaseModel):
     title: str = Field(description="Short title, at most 80 characters.", max_length=80)
-    description: str = Field(description="What the attacker did, in one or two sentences, using only what cited events show.")
+    description: str = Field(
+        description="What the attacker did, in one or two sentences, using only what cited events show."
+    )
     technique_id: str | None = Field(default=None, description="ATT&CK technique ID, only if model is confident.")
-    evidence_event_ids: list[str] = Field(description="IDs of events that show it. At least 1 and at most 8.", min_length=1, max_length=8)
+    evidence_event_ids: list[str] = Field(
+        description="IDs of events that show it. At least 1 and at most 8.", min_length=1, max_length=8
+    )
 
 
 class StoryDraftOutput(BaseModel):
@@ -80,7 +84,9 @@ class Story(BaseModel):
     max_attempts: int = Field(default=3, description="The retry cap in use.")
     summary: str | None = Field(default=None, description="Overall summary, written from verified steps only.")
     steps: list[StoryStep] = Field(default_factory=list, description="Steps in chronological time order.")
-    unsupported_claims: list[UnsupportedClaim] = Field(default_factory=list, description="Claims the verifier rejected.")
+    unsupported_claims: list[UnsupportedClaim] = Field(
+        default_factory=list, description="Claims the verifier rejected."
+    )
     assumptions: list[str] = Field(default_factory=list, description="All assumptions reported by model.")
     usage: TokenUsage = Field(default_factory=TokenUsage, description="Token use for this story.")
     duration_seconds: float | None = Field(default=None, description="Time to produce story.")

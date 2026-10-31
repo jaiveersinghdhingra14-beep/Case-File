@@ -14,6 +14,7 @@ CaseFile v2 enforces an uncompromising 4-check deterministic verification gate:
 Only steps that pass ALL 4 checks are marked `supported` and included in the final story.
 Any hallucinated or unsupported claims are rejected and quarantined into `unsupported_claims`.
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -46,7 +47,9 @@ def verify_story_step(
     # -------------------------------------------------------------------------
     cited_ids = draft.evidence_event_ids or []
     c1_passed = 1 <= len(cited_ids) <= 8
-    c1_detail = f"Cited {len(cited_ids)} events." if c1_passed else f"Invalid citation count: {len(cited_ids)} (must be 1-8)."
+    c1_detail = (
+        f"Cited {len(cited_ids)} events." if c1_passed else f"Invalid citation count: {len(cited_ids)} (must be 1-8)."
+    )
     check_results.append(CheckResult(name=CheckName.has_citation, passed=c1_passed, detail=c1_detail))
     if not c1_passed:
         failed_reasons.append(c1_detail)
@@ -56,7 +59,11 @@ def verify_story_step(
     # -------------------------------------------------------------------------
     missing_ids = [eid for eid in cited_ids if eid not in events_by_id]
     c2_passed = len(missing_ids) == 0 and len(cited_ids) > 0
-    c2_detail = "All cited event IDs exist in telemetry." if c2_passed else f"Event IDs not found in candidate set: {missing_ids}"
+    c2_detail = (
+        "All cited event IDs exist in telemetry."
+        if c2_passed
+        else f"Event IDs not found in candidate set: {missing_ids}"
+    )
     check_results.append(CheckResult(name=CheckName.ids_exist, passed=c2_passed, detail=c2_detail))
     if not c2_passed:
         failed_reasons.append(c2_detail)
@@ -100,7 +107,11 @@ def verify_story_step(
                 c4_passed = True
                 break
 
-    c4_detail = "Cited telemetry contains concrete forensic evidence." if c4_passed else "No concrete forensic artifact (IP, command, domain) found in cited events."
+    c4_detail = (
+        "Cited telemetry contains concrete forensic evidence."
+        if c4_passed
+        else "No concrete forensic artifact (IP, command, domain) found in cited events."
+    )
     check_results.append(CheckResult(name=CheckName.specific_evidence, passed=c4_passed, detail=c4_detail))
     if not c4_passed:
         failed_reasons.append(c4_detail)

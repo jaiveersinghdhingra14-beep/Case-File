@@ -6,6 +6,7 @@ Usage:
     python scripts/generate_case_story.py ds_46a8444f
     python scripts/generate_case_story.py
 """
+
 import argparse
 import sys
 import time
@@ -33,9 +34,18 @@ from backend.app.store import db
 
 def main():
     parser = argparse.ArgumentParser(description="Run End-to-End Case & Verified Attack Story Pipeline.")
-    parser.add_argument("dataset_id", nargs="?", default="", help="Dataset ID (e.g. ds_46a8444f). Picks latest ready if omitted.")
+    parser.add_argument(
+        "dataset_id", nargs="?", default="", help="Dataset ID (e.g. ds_46a8444f). Picks latest ready if omitted."
+    )
     parser.add_argument("--top-k", type=int, default=30, help="Top-K anomaly seeds (default: 30)")
     parser.add_argument("--chunk-size", type=int, default=20, help="Events per LLM chunk (default: 20)")
+    parser.add_argument(
+        "--api-key",
+        type=str,
+        default="",
+        help="Gemini API Key (optional, can also be set via GEMINI_API_KEY env or .env)",
+    )
+    parser.add_argument("--use-mock", action="store_true", help="Force offline MockLLM instead of real Gemini API")
     args = parser.parse_args()
 
     db.init_db()
@@ -114,12 +124,21 @@ def main():
     # 4. Synthesize Story & Run 4-Check Verifier
     print(f"\n[3/4] Synthesizing Attack Narrative (Bounded Chunks <= {args.chunk_size}) & 4-Check Verification...")
     t1 = time.perf_counter()
-    draft, usage = write_story_for_events(expanded, chunk_size=args.chunk_size)
+    draft, usage = write_story_for_events(
+        expanded,
+        chunk_size=args.chunk_size,
+        api_key=args.api_key,
+        force_mock=args.use_mock,
+    )
     verified_steps, unsupported = verify_all_steps(draft.steps, events_by_id)
     t_story = time.perf_counter() - t1
 
     supported_count = sum(1 for s in verified_steps if s.verdict == "supported")
     story_id = db.generate_id("story_")
+
+    active_key = (args.api_key or db.settings.GEMINI_API_KEY).strip()
+    is_gemini_active = bool(active_key and not args.use_mock)
+    model_label = "gemini-2.0-flash (SOC Analyst AI)" if is_gemini_active else "MockLLM-Verified"
 
     story = Story(
         story_id=story_id,
@@ -128,7 +147,7 @@ def main():
         status=StoryStatus.awaiting_review,
         created_at=now,
         updated_at=datetime.now(timezone.utc),
-        model_name="gemini-2.0-flash" if not db.settings.USE_MOCK_LLM else "MockLLM-Verified",
+        model_name=model_label,
         attempts_used=1,
         max_attempts=3,
         summary=draft.summary,

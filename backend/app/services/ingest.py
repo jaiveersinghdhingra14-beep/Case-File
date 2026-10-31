@@ -14,14 +14,14 @@ ENGINEERING PRINCIPLES:
 3. Observability: Records StageMetric (rows_in, rows_out, seconds, peak_rss_mb, throughput_mb_s)
    feeding GET /datasets/{id}/benchmark and the judges' evaluation panel.
 """
+
 from __future__ import annotations
 
-from collections.abc import Callable, Generator
 import concurrent.futures
-from datetime import datetime
-import os
-from pathlib import Path
 import time
+from collections.abc import Callable, Generator
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import psutil
@@ -34,35 +34,37 @@ from ..schemas import BenchmarkReport, DatasetStatus, StageMetric, TimeWindow
 from ..store import db
 
 # PyArrow schema for NormalizedEvent storage in Parquet
-EVENT_ARROW_SCHEMA = pa.schema([
-    ("event_id", pa.string()),
-    ("timestamp", pa.timestamp("ms")),
-    ("host", pa.string()),
-    ("source", pa.string()),
-    ("category", pa.string()),
-    ("user", pa.string()),
-    ("pid", pa.int64()),
-    ("ppid", pa.int64()),
-    ("process_name", pa.string()),
-    ("executable", pa.string()),
-    ("command_line", pa.string()),
-    ("file_path", pa.string()),
-    ("remote_address", pa.string()),
-    ("remote_port", pa.int64()),
-    ("wazuh_rule_id", pa.int64()),
-    ("wazuh_rule_level", pa.int64()),
-    ("mitre_ids", pa.list_(pa.string())),
-    ("kill_chain_stage", pa.string()),
-    ("is_noise", pa.bool_()),
-    ("noise_reason", pa.string()),
-    ("group_id", pa.string()),
-    ("summary", pa.string()),
-    ("source_file", pa.string()),
-    ("byte_offset", pa.int64()),
-    ("byte_length", pa.int64()),
-    ("rarity_score", pa.float64()),
-    ("is_seed", pa.bool_()),
-])
+EVENT_ARROW_SCHEMA = pa.schema(
+    [
+        ("event_id", pa.string()),
+        ("timestamp", pa.timestamp("ms")),
+        ("host", pa.string()),
+        ("source", pa.string()),
+        ("category", pa.string()),
+        ("user", pa.string()),
+        ("pid", pa.int64()),
+        ("ppid", pa.int64()),
+        ("process_name", pa.string()),
+        ("executable", pa.string()),
+        ("command_line", pa.string()),
+        ("file_path", pa.string()),
+        ("remote_address", pa.string()),
+        ("remote_port", pa.int64()),
+        ("wazuh_rule_id", pa.int64()),
+        ("wazuh_rule_level", pa.int64()),
+        ("mitre_ids", pa.list_(pa.string())),
+        ("kill_chain_stage", pa.string()),
+        ("is_noise", pa.bool_()),
+        ("noise_reason", pa.string()),
+        ("group_id", pa.string()),
+        ("summary", pa.string()),
+        ("source_file", pa.string()),
+        ("byte_offset", pa.int64()),
+        ("byte_length", pa.int64()),
+        ("rarity_score", pa.float64()),
+        ("is_seed", pa.bool_()),
+    ]
+)
 
 
 def get_newline_aligned_shards(file_path: Path, shard_size_bytes: int = 32 * 1024 * 1024) -> list[tuple[int, int]]:

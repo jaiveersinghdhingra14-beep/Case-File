@@ -128,14 +128,17 @@ def test_demo_reset_logic():
     c_id = db.generate_id("case_")
     now = datetime.now(timezone.utc)
     from backend.app.schemas import Case, CaseStatus
-    db.save_case(Case(
-        case_id=c_id,
-        dataset_id="ds_123",
-        name="Demo Case",
-        status=CaseStatus.ready,
-        created_at=now,
-        updated_at=now,
-    ))
+
+    db.save_case(
+        Case(
+            case_id=c_id,
+            dataset_id="ds_123",
+            name="Demo Case",
+            status=CaseStatus.ready,
+            created_at=now,
+            updated_at=now,
+        )
+    )
     assert db.get_case(c_id) is not None
 
     res = demo_reset(DemoResetRequest(clear_history=True, clear_datasets=False))

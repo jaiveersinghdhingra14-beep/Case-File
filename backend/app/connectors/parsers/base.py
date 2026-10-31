@@ -9,6 +9,7 @@ auto-detects the format and selects the right parser at runtime.
 ENGINEERING PRINCIPLE: Open/Closed Principle — open for extension (new parsers),
 closed for modification (existing pipeline code never changes).
 """
+
 from __future__ import annotations
 
 import abc

@@ -10,6 +10,7 @@ ENGINEERING PRINCIPLE: Fail-fast — if the profiler can't identify the format,
 the dataset is rejected immediately with a clear error, not halfway through
 a 2-hour ingest.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -22,14 +23,15 @@ from ..connectors.parsers.base import BaseParser
 @dataclass
 class ProfileResult:
     """Results from profiling a raw log file."""
-    format_name: str               # "auditd", "jsonlines", "syslog", "csv", "unknown"
-    parser: BaseParser | None      # Ready-to-use parser instance
-    file_path: str                 # Absolute path
-    size_bytes: int                # File size
-    estimated_lines: int           # Rough line count estimate
-    sample_head: list[str]         # First N lines
-    sample_tail: list[str]         # Last N lines
-    hosts_sample: list[str]        # Unique hosts found in samples
+
+    format_name: str  # "auditd", "jsonlines", "syslog", "csv", "unknown"
+    parser: BaseParser | None  # Ready-to-use parser instance
+    file_path: str  # Absolute path
+    size_bytes: int  # File size
+    estimated_lines: int  # Rough line count estimate
+    sample_head: list[str]  # First N lines
+    sample_tail: list[str]  # Last N lines
+    hosts_sample: list[str]  # Unique hosts found in samples
     time_range_hint: tuple | None  # (earliest_ts, latest_ts) from samples
 
 
@@ -70,9 +72,7 @@ def profile_file(file_path: str | Path, sample_size: int = 50) -> ProfileResult:
 
     # --- Estimate total lines ---
     non_blank = [l for l in all_sample_lines if l.strip()]
-    avg_line_bytes = (
-        sum(len(l.encode("utf-8", errors="replace")) for l in non_blank) / max(len(non_blank), 1)
-    )
+    avg_line_bytes = sum(len(l.encode("utf-8", errors="replace")) for l in non_blank) / max(len(non_blank), 1)
     estimated_lines = int(size_bytes / max(avg_line_bytes, 1)) if avg_line_bytes > 0 else 0
 
     # --- Extract hosts and time range from sample ---
@@ -109,9 +109,7 @@ def profile_file(file_path: str | Path, sample_size: int = 50) -> ProfileResult:
     )
 
 
-def _read_chunk_lines(
-    fpath: Path, offset: int, chunk_bytes: int, max_lines: int
-) -> list[str]:
+def _read_chunk_lines(fpath: Path, offset: int, chunk_bytes: int, max_lines: int) -> list[str]:
     """
     Read a byte chunk from the file and split into lines.
     Discards the first partial line (if offset > 0) and last partial line.

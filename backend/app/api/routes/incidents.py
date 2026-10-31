@@ -62,13 +62,15 @@ def get_incident_report(incident_id: str) -> ReportResponse:
             f"- **Cited Event**: `{step.event_id}`\n"
         )
 
-    md_lines.extend([
-        "## Adversary Look-Ahead & Blast Radius",
-        f"- **Reachable Systems**: {', '.join(inc.lookahead.reachable_hosts) or 'None'}",
-        f"- **Critical Assets at Immediate Risk**: {', '.join(inc.lookahead.critical_assets_at_risk) or 'None'}",
-        "",
-        "### Recommended Immediate Containment Actions",
-    ])
+    md_lines.extend(
+        [
+            "## Adversary Look-Ahead & Blast Radius",
+            f"- **Reachable Systems**: {', '.join(inc.lookahead.reachable_hosts) or 'None'}",
+            f"- **Critical Assets at Immediate Risk**: {', '.join(inc.lookahead.critical_assets_at_risk) or 'None'}",
+            "",
+            "### Recommended Immediate Containment Actions",
+        ]
+    )
     for rec in inc.lookahead.recommended_containment:
         md_lines.append(f"- [ ] {rec}")
 

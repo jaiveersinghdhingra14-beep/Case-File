@@ -11,6 +11,7 @@ Uses compiled regular expressions and string indexing to parse key=value fields
 without expensive JSON serialization. Extracts internal client IP (srcip), destination (dstip),
 ports, protocol, DNS hostnames, user accounts, and action outcomes.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -37,7 +38,9 @@ class FortigateParser(BaseParser):
             if not s:
                 continue
             total += 1
-            if (("devname=" in s or "devid=" in s or "type=\"utm\"" in s or "type=utm" in s) and "date=" in s) or ("srcip=" in s and "dstip=" in s and "logid=" in s):
+            if (("devname=" in s or "devid=" in s or 'type="utm"' in s or "type=utm" in s) and "date=" in s) or (
+                "srcip=" in s and "dstip=" in s and "logid=" in s
+            ):
                 hits += 1
         return total > 0 and (hits / total) >= 0.5
 

@@ -12,6 +12,7 @@ Judges need to inspect:
 2. Reconstructed incident steps ordered chronologically.
 3. Node-link graph export compatible with vis-network / Cytoscape.js / D3.js.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -124,15 +125,17 @@ def export_graph_to_vis_json(G: nx.DiGraph) -> dict[str, Any]:
             shape = "dot"
             size = 20
 
-        nodes.append({
-            "id": node_id,
-            "label": attrs.get("label", node_id),
-            "color": color,
-            "shape": shape,
-            "size": size,
-            "font": {"color": "#ffffff", "face": "system-ui"},
-            "title": f"Node: {node_id}\nType: {node_type.upper()}",
-        })
+        nodes.append(
+            {
+                "id": node_id,
+                "label": attrs.get("label", node_id),
+                "color": color,
+                "shape": shape,
+                "size": size,
+                "font": {"color": "#ffffff", "face": "system-ui"},
+                "title": f"Node: {node_id}\nType: {node_type.upper()}",
+            }
+        )
 
     edges = []
     for u, v, attrs in G.edges(data=True):
@@ -147,23 +150,25 @@ def export_graph_to_vis_json(G: nx.DiGraph) -> dict[str, Any]:
         label = f"{tid}"
         tooltip = f"{tid} ({tname})\nTime: {ts}\nStage: {stage}"
 
-        edges.append({
-            "from": u,
-            "to": v,
-            "label": label,
-            "title": tooltip,
-            "technique_id": tid,
-            "technique_name": tname,
-            "stage": stage,
-            "timestamp": ts,
-            "iso_timestamp": ts_iso,
-            "detail": detail,
-            "event_id": eid,
-            "arrows": "to",
-            "color": {"color": "#64748b", "highlight": "#38bdf8"},
-            "font": {"color": "#94a3b8", "size": 11, "align": "top"},
-            "smooth": {"type": "curvedCW", "roundness": 0.2},
-        })
+        edges.append(
+            {
+                "from": u,
+                "to": v,
+                "label": label,
+                "title": tooltip,
+                "technique_id": tid,
+                "technique_name": tname,
+                "stage": stage,
+                "timestamp": ts,
+                "iso_timestamp": ts_iso,
+                "detail": detail,
+                "event_id": eid,
+                "arrows": "to",
+                "color": {"color": "#64748b", "highlight": "#38bdf8"},
+                "font": {"color": "#94a3b8", "size": 11, "align": "top"},
+                "smooth": {"type": "curvedCW", "roundness": 0.2},
+            }
+        )
 
     return {"nodes": nodes, "edges": edges}
 
@@ -189,7 +194,11 @@ def correlate_incident_paths(
 
     for idx, comp in enumerate(components, start=1):
         comp_nodes = set(comp)
-        comp_events = [e for e in sorted_events if e.host in comp_nodes or e.remote_address in comp_nodes or e.file_path in comp_nodes]
+        comp_events = [
+            e
+            for e in sorted_events
+            if e.host in comp_nodes or e.remote_address in comp_nodes or e.file_path in comp_nodes
+        ]
 
         if not comp_events:
             continue
@@ -213,7 +222,9 @@ def correlate_incident_paths(
             stages_set.add(stage)
 
             target = evt.file_path or evt.remote_address or "system"
-            action_desc = f"{evt.host} executed {tname or 'action'} targeting {target} via {tid or 'network telemetry'}."
+            action_desc = (
+                f"{evt.host} executed {tname or 'action'} targeting {target} via {tid or 'network telemetry'}."
+            )
 
             steps.append(
                 IncidentStep(

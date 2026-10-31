@@ -108,6 +108,7 @@ def init_db() -> None:
 # Dataset Operations
 # -----------------------------------------------------------------------------
 
+
 def save_dataset(ds: Dataset) -> None:
     conn = get_connection()
     now_iso = ds.created_at.isoformat()
@@ -163,6 +164,7 @@ def list_datasets() -> list[Dataset]:
 # -----------------------------------------------------------------------------
 # Case Operations
 # -----------------------------------------------------------------------------
+
 
 def save_case(case: Case) -> None:
     conn = get_connection()
@@ -220,6 +222,7 @@ def list_cases(dataset_id: str | None = None) -> list[Case]:
 # -----------------------------------------------------------------------------
 # Incident Operations (FR-4, FR-5, FR-6, FR-7, B-1, B-3)
 # -----------------------------------------------------------------------------
+
 
 def save_incident(incident: IncidentPath) -> None:
     conn = get_connection()
@@ -292,6 +295,7 @@ def list_incidents(dataset_id: str | None = None) -> list[IncidentSummary]:
 # Story Operations
 # -----------------------------------------------------------------------------
 
+
 def save_story(story: Story) -> None:
     conn = get_connection()
     data_json = story.model_dump_json()
@@ -341,6 +345,7 @@ def list_stories(case_id: str | None = None) -> list[Story]:
 # Evaluation Operations
 # -----------------------------------------------------------------------------
 
+
 def save_evaluation(evaluation: Evaluation) -> None:
     conn = get_connection()
     data_json = evaluation.model_dump_json()
@@ -388,6 +393,7 @@ def get_evaluation_for_story(story_id: str) -> Evaluation | None:
 # Benchmark Operations
 # -----------------------------------------------------------------------------
 
+
 def save_benchmark(report: BenchmarkReport) -> None:
     conn = get_connection()
     data_json = report.model_dump_json()
@@ -417,6 +423,7 @@ def get_benchmark(dataset_id: str) -> BenchmarkReport | None:
 # -----------------------------------------------------------------------------
 # Demo Reset
 # -----------------------------------------------------------------------------
+
 
 def clear_all(keep_datasets: bool = True) -> None:
     """Clear cases, incidents, stories, evaluations for demo reset. Keeps datasets and Parquet if keep_datasets is True."""

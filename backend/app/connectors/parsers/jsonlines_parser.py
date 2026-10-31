@@ -9,6 +9,7 @@ HOW IT AVOIDS BLACKBOXING: Every field extraction is an explicit dictionary look
 with a documented fallback chain — judges can trace exactly how event_id, host,
 command_line etc. are derived from raw JSON keys.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -103,14 +104,10 @@ class JsonLinesParser(BaseParser):
 
         # --- Process fields ---
         pid = self.safe_int(
-            _deep_get(obj, "data", "audit", "pid")
-            or _deep_get(obj, "process", "pid")
-            or obj.get("pid")
+            _deep_get(obj, "data", "audit", "pid") or _deep_get(obj, "process", "pid") or obj.get("pid")
         )
         ppid = self.safe_int(
-            _deep_get(obj, "data", "audit", "ppid")
-            or _deep_get(obj, "process", "parent", "pid")
-            or obj.get("ppid")
+            _deep_get(obj, "data", "audit", "ppid") or _deep_get(obj, "process", "parent", "pid") or obj.get("ppid")
         )
         executable = (
             _deep_get(obj, "data", "audit", "exe")
@@ -124,10 +121,7 @@ class JsonLinesParser(BaseParser):
             or obj.get("command_line")
             or obj.get("cmd")
         )
-        process_name = (
-            _deep_get(obj, "process", "name")
-            or obj.get("process_name")
-        )
+        process_name = _deep_get(obj, "process", "name") or obj.get("process_name")
 
         # --- File fields ---
         file_path = (
@@ -158,11 +152,7 @@ class JsonLinesParser(BaseParser):
         wazuh_rule_level = self.safe_int(_deep_get(obj, "rule", "level"))
 
         # --- MITRE ATT&CK IDs & Kill Chain Stage ---
-        mitre_ids = (
-            _deep_get(obj, "threat", "technique", "id")
-            or _deep_get(obj, "rule", "mitre", "id")
-            or []
-        )
+        mitre_ids = _deep_get(obj, "threat", "technique", "id") or _deep_get(obj, "rule", "mitre", "id") or []
         if isinstance(mitre_ids, str):
             mitre_ids = [mitre_ids]
 
@@ -178,17 +168,18 @@ class JsonLinesParser(BaseParser):
 
         # --- Source label ---
         source = (
-            _deep_get(obj, "decoder", "name")
-            or _deep_get(obj, "input", "type")
-            or obj.get("source")
-            or "jsonlines"
+            _deep_get(obj, "decoder", "name") or _deep_get(obj, "input", "type") or obj.get("source") or "jsonlines"
         )
 
         # --- Summary line (what the LLM will see) ---
         summary = _build_summary(
-            host=host, user=user, executable=executable,
-            command_line=command_line, file_path=file_path,
-            remote_address=remote_address, remote_port=remote_port,
+            host=host,
+            user=user,
+            executable=executable,
+            command_line=command_line,
+            file_path=file_path,
+            remote_address=remote_address,
+            remote_port=remote_port,
             category=category,
         )
 
@@ -227,6 +218,7 @@ class JsonLinesParser(BaseParser):
 # ---------------------------------------------------------------------------
 # Private helper functions (transparent, inspectable by judges)
 # ---------------------------------------------------------------------------
+
 
 def _deep_get(d: dict, *keys: str) -> Any:
     """Walk nested dict by key path. Returns None if any key is missing."""
@@ -281,8 +273,14 @@ def _classify_category(obj: dict, exe: Any, fpath: Any, remote: Any) -> str:
 
 
 def _build_summary(
-    host: str, user: Any, executable: Any, command_line: Any,
-    file_path: Any, remote_address: Any, remote_port: Any, category: str,
+    host: str,
+    user: Any,
+    executable: Any,
+    command_line: Any,
+    file_path: Any,
+    remote_address: Any,
+    remote_port: Any,
+    category: str,
 ) -> str:
     """Build a single human-readable line for the LLM context window."""
     parts = [f"[{host}]"]

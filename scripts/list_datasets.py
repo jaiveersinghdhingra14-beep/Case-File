@@ -5,8 +5,9 @@ CLI Tool to list all registered and ingested datasets in CaseFile v2.
 Usage:
     python scripts/list_datasets.py
 """
-from pathlib import Path
+
 import sys
+from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
@@ -33,7 +34,9 @@ def main():
     for d in datasets:
         size_mb = f"{d.size_bytes / (1024 * 1024):.1f}"
         events_str = f"{d.events_total:,}" if d.events_total else "0"
-        print(f"{d.dataset_id:<15} {d.name[:20]:<22} {d.format.upper():<12} {size_mb:<12} {events_str:<14} {d.status.upper():<10}")
+        print(
+            f"{d.dataset_id:<15} {d.name[:20]:<22} {d.format.upper():<12} {size_mb:<12} {events_str:<14} {d.status.upper():<10}"
+        )
 
     print("=" * 85)
     print("To analyze a dataset, run:")

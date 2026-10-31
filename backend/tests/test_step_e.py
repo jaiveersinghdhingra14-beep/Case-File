@@ -34,7 +34,7 @@ def setup_test_db(tmp_path, monkeypatch):
 
 def test_stage_mapper():
     # 1. Direct MITRE ID
-    tid, name, stage = map_technique_and_stage(mitre_ids=["T1190"])
+    tid, _name, stage = map_technique_and_stage(mitre_ids=["T1190"])
     assert tid == "T1190"
     assert stage == KillChainStage.INITIAL_ACCESS
 

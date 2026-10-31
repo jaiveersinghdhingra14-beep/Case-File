@@ -8,6 +8,7 @@ Incident responders need to know not just what happened, but WHAT HAPPENS NEXT:
   sit within their 1-hop and 2-hop radius?
 - What immediate containment actions will stop lateral expansion?
 """
+
 from __future__ import annotations
 
 import re
@@ -54,7 +55,9 @@ def analyze_blast_radius(
                 if target.startswith(("10.", "172.16.", "192.168.")):
                     if target not in comp_hosts_set:
                         reachable_hosts_set.add(target)
-                elif any(c in target for c in [".com", ".net", ".org", ".io", ".invalid", ".test"]) or not target.startswith("10."):
+                elif any(
+                    c in target for c in [".com", ".net", ".org", ".io", ".invalid", ".test"]
+                ) or not target.startswith("10."):
                     # Possible C2 destination
                     external_c2s.add(target)
 
@@ -116,9 +119,7 @@ def analyze_blast_radius(
 
     if external_c2s:
         c2_str = ", ".join(sorted(external_c2s)[:5])
-        containment_steps.append(
-            f"Block outbound egress traffic to observed adversary infrastructure: {c2_str}."
-        )
+        containment_steps.append(f"Block outbound egress traffic to observed adversary infrastructure: {c2_str}.")
 
     if critical_assets_set:
         crit_str = ", ".join(sorted(critical_assets_set)[:4])

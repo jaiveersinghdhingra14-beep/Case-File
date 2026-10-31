@@ -6,12 +6,13 @@ Usage:
     python scripts/ingest_file.py data/raw/firex-10G.log
     python scripts/ingest_file.py data/raw/edr_events.json
 """
+
 import argparse
-from datetime import datetime, timezone
 import os
-from pathlib import Path
 import sys
 import time
+from datetime import datetime, timezone
+from pathlib import Path
 
 # Ensure project root is in sys.path
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -28,7 +29,9 @@ def main():
     parser = argparse.ArgumentParser(description="Ingest big log file into CaseFile Parquet storage.")
     parser.add_argument("file_path", help="Path to raw log file (e.g. data/raw/firex-10G.log)")
     parser.add_argument("--batch-size", type=int, default=25000, help="Arrow batch size (default: 25,000)")
-    parser.add_argument("--workers", type=int, default=default_workers, help=f"Parallel CPU workers (default: {default_workers})")
+    parser.add_argument(
+        "--workers", type=int, default=default_workers, help=f"Parallel CPU workers (default: {default_workers})"
+    )
     parser.add_argument("--name", type=str, default="", help="Optional display name for dataset")
     args = parser.parse_args()
 
@@ -78,9 +81,12 @@ def main():
     print(f"Dataset ID  : {ds_id}")
 
     # 3. Run Ingest
-    print(f"\n[Stage 2/2] Streaming ingestion into Parquet (Batch Size: {args.batch_size:,} | Workers: {args.workers})...")
+    print(
+        f"\n[Stage 2/2] Streaming ingestion into Parquet (Batch Size: {args.batch_size:,} | Workers: {args.workers})..."
+    )
 
     last_update = time.perf_counter()
+
     def progress_callback(rows_in: int, rows_out: int):
         nonlocal last_update
         now = time.perf_counter()

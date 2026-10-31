@@ -23,7 +23,9 @@ class EvaluateRequest(BaseModel):
 
 class StepMatch(BaseModel):
     ground_truth_step_index: int = Field(description="Step index in ground truth.")
-    story_step_number: int | None = Field(default=None, description="Story step number it was matched to. Null if missed.")
+    story_step_number: int | None = Field(
+        default=None, description="Story step number it was matched to. Null if missed."
+    )
     matched: bool = Field(description="True if both technique and time window matched.")
     technique_match: bool = Field(description="Whether some story step named this technique.")
     time_overlap: bool = Field(description="Whether time range overlapped.")
@@ -37,7 +39,9 @@ class Metrics(BaseModel):
     step_precision: float | None = Field(default=None, description="Matched divided by story steps. Null if no steps.")
     false_steps: int = Field(description="Story steps that matched nothing. Crucial for noise_only.")
     order_accuracy: float | None = Field(default=None, description="Share of matched pairs in same relative order.")
-    grounding_rate: float | None = Field(default=None, description="Share of cited events that fall inside the true window.")
+    grounding_rate: float | None = Field(
+        default=None, description="Share of cited events that fall inside the true window."
+    )
     evidence_coverage: float | None = Field(default=None, description="Share of true window non-noise events cited.")
 
 
@@ -67,5 +71,7 @@ class ComparisonResponse(BaseModel):
     case_id: str = Field(description="The case ID.")
     dataset_id: str = Field(description="The dataset ID.")
     ground_truth_steps: int = Field(description="Steps in the true chain (0 if unknown).")
-    results: list[MethodResult] = Field(description="One row per method in order: casefile, baseline_window, baseline_raw.")
+    results: list[MethodResult] = Field(
+        description="One row per method in order: casefile, baseline_window, baseline_raw."
+    )
     generated_at: datetime = Field(description="When comparison was computed.")

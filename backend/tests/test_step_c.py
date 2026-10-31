@@ -26,13 +26,7 @@ def setup_test_db(tmp_path, monkeypatch):
 
 
 def test_newline_aligned_sharding(tmp_path: Path):
-    sample_content = (
-        b"line1-hello\n"
-        b"line2-world\n"
-        b"line3-testing-sharding\n"
-        b"line4-fourth-line\n"
-        b"line5-fifth-line\n"
-    )
+    sample_content = b"line1-hello\nline2-world\nline3-testing-sharding\nline4-fourth-line\nline5-fifth-line\n"
     test_file = tmp_path / "shard_test.log"
     test_file.write_bytes(sample_content)
 

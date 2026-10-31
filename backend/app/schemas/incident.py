@@ -21,7 +21,9 @@ class IncidentStep(BaseModel):
 class LookaheadReach(BaseModel):
     compromised_accounts: list[str] = Field(description="Accounts verified under adversary control.")
     compromised_hosts: list[str] = Field(description="Machines compromised in this path.")
-    reachable_hosts: list[str] = Field(description="Hosts the attacker could reach next via admin rights, credentials, or network routes.")
+    reachable_hosts: list[str] = Field(
+        description="Hosts the attacker could reach next via admin rights, credentials, or network routes."
+    )
     critical_assets_at_risk: list[str] = Field(description="High-value servers or databases within attacker's reach.")
     recommended_containment: list[str] = Field(description="Immediate containment actions to stop the attack.")
 

@@ -69,9 +69,7 @@ class DuckDBStore:
         if is_seed_only:
             where_clauses.append("is_seed = true")
         if search_query:
-            where_clauses.append(
-                "(summary ILIKE ? OR command_line ILIKE ? OR file_path ILIKE ? OR user ILIKE ?)"
-            )
+            where_clauses.append("(summary ILIKE ? OR command_line ILIKE ? OR file_path ILIKE ? OR user ILIKE ?)")
             like_val = f"%{search_query}%"
             params.extend([like_val, like_val, like_val, like_val])
 
@@ -95,7 +93,9 @@ class DuckDBStore:
         for _, row in df.iterrows():
             d = row.to_dict()
             # Clean up numpy NaNs and nulls
-            cleaned = {k: (None if (v is None or (isinstance(v, float) and math.isnan(v))) else v) for k, v in d.items()}
+            cleaned = {
+                k: (None if (v is None or (isinstance(v, float) and math.isnan(v))) else v) for k, v in d.items()
+            }
             # mitre_ids conversion if stored as array/list/string
             m_ids = cleaned.get("mitre_ids")
             if isinstance(m_ids, str):

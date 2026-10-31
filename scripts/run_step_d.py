@@ -7,10 +7,11 @@ Usage:
     python scripts/run_step_d.py ds_812ee6b0
     python scripts/run_step_d.py --top-k 10
 """
+
 import argparse
-from pathlib import Path
 import sys
 import time
+from pathlib import Path
 
 # Ensure project root is in sys.path
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -24,9 +25,13 @@ from backend.app.store import db
 
 def main():
     parser = argparse.ArgumentParser(description="Test Step D on an ingested dataset.")
-    parser.add_argument("dataset_id", nargs="?", default="", help="Dataset ID (e.g. ds_812ee6b0). If empty, picks latest ready dataset.")
+    parser.add_argument(
+        "dataset_id", nargs="?", default="", help="Dataset ID (e.g. ds_812ee6b0). If empty, picks latest ready dataset."
+    )
     parser.add_argument("--top-k", type=int, default=20, help="Number of suspicious seeds to display (default: 20)")
-    parser.add_argument("--window", type=int, default=120, help="Neighborhood expansion window in seconds (default: 120)")
+    parser.add_argument(
+        "--window", type=int, default=120, help="Neighborhood expansion window in seconds (default: 120)"
+    )
     args = parser.parse_args()
 
     db.init_db()
@@ -36,7 +41,10 @@ def main():
         datasets = db.list_datasets()
         ready_ds = [d for d in datasets if d.status == "ready"]
         if not ready_ds:
-            print("[ERROR] No ready datasets found in database. Ingest a dataset first using scripts/ingest_file.py.", file=sys.stderr)
+            print(
+                "[ERROR] No ready datasets found in database. Ingest a dataset first using scripts/ingest_file.py.",
+                file=sys.stderr,
+            )
             sys.exit(1)
         ds = ready_ds[-1]
         ds_id = ds.dataset_id
@@ -71,7 +79,9 @@ def main():
     for idx, s in enumerate(seeds[:7], start=1):
         target = s.file_path or s.remote_address or "N/A"
         mitre_str = f" [MITRE: {', '.join(s.mitre_ids)}]" if s.mitre_ids else ""
-        print(f"    {idx}. [{s.timestamp}] Host: {s.host} -> Target: {target} | Rarity: {s.rarity_score:.4f}{mitre_str}")
+        print(
+            f"    {idx}. [{s.timestamp}] Host: {s.host} -> Target: {target} | Rarity: {s.rarity_score:.4f}{mitre_str}"
+        )
 
     # 2. 2-Hop Neighborhood Expansion
     print(f"\n[2/3] Performing 2-Hop Graph Neighborhood Expansion (Window: ±{args.window}s)...")
@@ -81,7 +91,9 @@ def main():
 
     print(f"  Candidate Subgraph : {len(expanded)} contextual events preserved")
     print(f"  Expansion Time     : {t_expand:.3f}s")
-    print(f"  Noise Pruned       : {ds.events_total - len(expanded):,} routine background events eliminated ({(1 - len(expanded)/max(ds.events_total,1))*100:.2f}%)")
+    print(
+        f"  Noise Pruned       : {ds.events_total - len(expanded):,} routine background events eliminated ({(1 - len(expanded) / max(ds.events_total, 1)) * 100:.2f}%)"
+    )
 
     # 3. Lookahead Reachability & Blast Radius Analysis (PRD FR-6)
     print("\n[3/3] Computing Lookahead Blast Radius & Critical Assets at Risk (FR-6)...")

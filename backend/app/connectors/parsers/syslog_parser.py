@@ -9,6 +9,7 @@ HOW: Uses a simple regex to extract priority, timestamp, hostname, process, and
 message. If the message body contains JSON, delegates to the JSON parser for
 deeper field extraction.
 """
+
 from __future__ import annotations
 
 import hashlib

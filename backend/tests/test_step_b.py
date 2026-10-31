@@ -7,6 +7,7 @@ Tests validate:
   3. The profiler reads small byte slices and identifies format without loading full file.
   4. The parser registry selects the correct parser for each format.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -25,6 +26,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 # ---------------------------------------------------------------------------
 # 1. Format Detection (can_parse)
 # ---------------------------------------------------------------------------
+
 
 class TestFormatDetection:
     def test_jsonlines_detected(self):
@@ -66,6 +68,7 @@ class TestFormatDetection:
 # ---------------------------------------------------------------------------
 # 2. Field Extraction (parse_line)
 # ---------------------------------------------------------------------------
+
 
 class TestJsonLinesParsing:
     def test_extracts_host_and_mitre(self):
@@ -165,6 +168,7 @@ class TestFortigateParsing:
 # 3. Parser Registry (auto-selection)
 # ---------------------------------------------------------------------------
 
+
 class TestParserRegistry:
     def test_selects_jsonlines(self):
         lines = (FIXTURES / "sample_jsonl.log").read_text().splitlines()[:5]
@@ -188,6 +192,7 @@ class TestParserRegistry:
 # ---------------------------------------------------------------------------
 # 4. Profiler (file-level sampling)
 # ---------------------------------------------------------------------------
+
 
 class TestProfiler:
     def test_profiles_jsonl_file(self):

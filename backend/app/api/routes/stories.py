@@ -1,5 +1,5 @@
-from datetime import datetime, timezone
 import time
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, status
 
@@ -8,7 +8,6 @@ from ...schemas import (
     CaseStatus,
     EvaluateRequest,
     Evaluation,
-    NormalizedEvent,
     ReportResponse,
     ReviewOutcome,
     Story,
@@ -94,7 +93,9 @@ def create_story(case_id: str, req: StoryCreateRequest, background_tasks: Backgr
     existing = db.list_stories(case_id=case_id)
     for s in existing:
         if s.method == req.method and s.status in [StoryStatus.queued, StoryStatus.generating, StoryStatus.verifying]:
-            raise already_in_progress(f"Story generation with method '{req.method.value}' is already running for this case.")
+            raise already_in_progress(
+                f"Story generation with method '{req.method.value}' is already running for this case."
+            )
 
     story_id = db.generate_id("story_")
     now = datetime.now(timezone.utc)

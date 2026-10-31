@@ -9,6 +9,7 @@ HOW: Parses key=value pairs using simple string splitting — no regex overhead 
 the hot path. Handles hex-encoded fields (e.g., proctitle, cmd) that auditd produces
 when arguments contain special characters.
 """
+
 from __future__ import annotations
 
 import hashlib

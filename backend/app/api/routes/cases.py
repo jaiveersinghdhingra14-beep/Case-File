@@ -58,8 +58,8 @@ def run_case_pipeline(case_id: str, req: CaseCreateRequest) -> None:
 
         # 5. Populate Case Stats
         ds_total = ds.events_total if ds else len(expanded)
-        comp_hosts = sorted(list({e.host for e in expanded}))
-        sources = sorted(list({e.source for e in expanded}))
+        comp_hosts = sorted({e.host for e in expanded})
+        sources = sorted({e.source for e in expanded})
 
         case.stats = CaseStats(
             events_ingested=ds_total,

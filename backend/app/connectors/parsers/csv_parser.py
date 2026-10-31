@@ -9,6 +9,7 @@ HOW: Reads the first line as a header row, then maps columns by name using a
 priority-ordered lookup table. If no header is present, falls back to positional
 column mapping for common formats.
 """
+
 from __future__ import annotations
 
 import csv
@@ -127,9 +128,9 @@ class CsvParser(BaseParser):
         fpath = _first_match(row, _FILE_COLS)
         remote = _first_match(row, _IP_COLS)
         port = self.safe_int(_first_match(row, _PORT_COLS))
-        eid = _first_match(row, _EVENT_ID_COLS) or hashlib.md5(
-            stripped.encode(), usedforsecurity=False
-        ).hexdigest()[:16]
+        eid = (
+            _first_match(row, _EVENT_ID_COLS) or hashlib.md5(stripped.encode(), usedforsecurity=False).hexdigest()[:16]
+        )
 
         category = "process_exec" if (exe or cmd) else ("network" if remote else "other")
 

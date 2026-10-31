@@ -12,6 +12,7 @@ CaseFile v2 enforces strict engineering controls:
 4. Offline MockLLM: Deterministic offline mode for tests, CI, and judge evaluation.
 5. Strict Schema Output: Enforces Pydantic `StoryDraftOutput` with mandatory citations.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -86,16 +87,82 @@ def generate_mock_story_draft(events: Sequence[NormalizedEvent]) -> StoryDraftOu
     )
 
 
+def generate_gemini_story_draft(
+    events: Sequence[NormalizedEvent],
+    api_key: str,
+    model_name: str = "gemini-2.0-flash",
+) -> tuple[StoryDraftOutput, int, int]:
+    """
+    Invokes Gemini 2.0 Flash with a Tier-3 Principal DFIR SOC Analyst system instruction,
+    forcing evidence-grounded Pydantic JSON schema output.
+    Returns (StoryDraftOutput, prompt_tokens, output_tokens).
+    """
+    from google import genai
+    from google.genai import types
+
+    client = genai.Client(api_key=api_key)
+
+    telemetry_lines = []
+    for e in events:
+        target = e.file_path or e.remote_address or "N/A"
+        cmd = e.command_line or "N/A"
+        m_str = f"MITRE:{','.join(e.mitre_ids)}" if e.mitre_ids else ""
+        telemetry_lines.append(
+            f"- [event_id={e.event_id}] Time:{e.timestamp.isoformat()} Host:{e.host} Target:{target} Detail:{cmd} {m_str}"
+        )
+    events_text = "\n".join(telemetry_lines)
+
+    system_instruction = (
+        "You are an Elite Tier-3 Principal DFIR (Digital Forensics & Incident Response) SOC Analyst.\n"
+        "Your mission: reconstruct cyber attack campaign mechanics from chronological firewall and endpoint telemetry.\n\n"
+        "STRICT GROUNDING DIRECTIVES (CRITICAL FOR FORENSIC VALIDATION):\n"
+        "1. CITATION MANDATE: Every single finding, movement, or action in each step MUST cite the exact event_id from the telemetry in evidence_event_ids.\n"
+        "2. ZERO HALLUCINATIONS: State ONLY what is supported by the provided log events (IPs, domains, ports, commands). If a connection happened, do NOT assume malware was downloaded unless an event proves it.\n"
+        "3. MITRE ATT&CK MAPPING: Tag each verified step with its precise MITRE technique ID (e.g. T1190 for Exploit Public-Facing Application, T1071 for C2 Communication, T1021 for Lateral Movement).\n"
+        "4. ADVERSARIAL MECHANICS: Explain what the attacker achieved or attempted, why they connected to that target, and what the firewall action did.\n"
+        "5. Output must adhere strictly to the requested JSON schema."
+    )
+
+    prompt = (
+        f"Analyze these {len(events)} telemetry events and produce a structured attack story draft:\n\n"
+        f"{events_text}\n\n"
+        f"Return your analysis strictly matching the requested JSON schema."
+    )
+
+    response = client.models.generate_content(
+        model=model_name,
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=system_instruction,
+            response_mime_type="application/json",
+            response_schema=StoryDraftOutput,
+            temperature=0.1,
+        ),
+    )
+
+    in_tokens = getattr(getattr(response, "usage_metadata", None), "prompt_token_count", None) or len(events) * 45
+    out_tokens = getattr(getattr(response, "usage_metadata", None), "candidates_token_count", None) or 150
+
+    parsed = StoryDraftOutput.model_validate_json(response.text)
+    return parsed, in_tokens, out_tokens
+
+
 def write_story_for_events(
     events: Sequence[NormalizedEvent],
     chunk_size: int = 20,
     max_llm_calls: int = 200,
+    api_key: str | None = None,
+    force_mock: bool = False,
 ) -> tuple[StoryDraftOutput, TokenUsage]:
     """
     Generate evidence-grounded story drafts across bounded event chunks with caching.
+    Supports real Gemini 2.0 Flash or deterministic offline MockLLM.
     """
     if not events:
         return StoryDraftOutput(summary="No events to summarize.", steps=[], assumptions=[]), TokenUsage()
+
+    active_key = (api_key or settings.GEMINI_API_KEY).strip()
+    use_gemini = bool(active_key and not force_mock)
 
     usage = TokenUsage()
     all_steps: list[StoryStepDraft] = []
@@ -114,15 +181,33 @@ def write_story_for_events(
             draft = _LLM_CACHE[chunk_hash]
         else:
             usage.llm_calls += 1
-            usage.input_tokens += len(chunk) * 45
-            usage.output_tokens += 120
 
-            # Generate draft (using MockLLM or Gemini if API key configured)
-            if settings.USE_MOCK_LLM or not settings.GEMINI_API_KEY:
-                draft = generate_mock_story_draft(chunk)
+            if use_gemini:
+                try:
+                    print(
+                        f"  [LLM] Invoking Gemini 2.0 Flash ({len(chunk)} events in chunk) with DFIR Analyst persona..."
+                    )
+                    draft, in_tok, out_tok = generate_gemini_story_draft(
+                        chunk,
+                        api_key=active_key,
+                        model_name=settings.LLM_MODEL,
+                    )
+                    usage.input_tokens += in_tok
+                    usage.output_tokens += out_tok
+                    print(
+                        f"  [LLM] Gemini response received ({len(draft.steps)} story steps, {in_tok} in / {out_tok} out tokens)."
+                    )
+                except Exception as e:  # noqa: BLE001
+                    import sys
+
+                    print(f"[WARN] Gemini call failed ({e}); falling back to offline generator.", file=sys.stderr)
+                    draft = generate_mock_story_draft(chunk)
+                    usage.input_tokens += len(chunk) * 45
+                    usage.output_tokens += 120
             else:
-                # Real Gemini call could be made here; fallback safely to mock
                 draft = generate_mock_story_draft(chunk)
+                usage.input_tokens += len(chunk) * 45
+                usage.output_tokens += 120
 
             # Store in cache
             _LLM_CACHE[chunk_hash] = draft

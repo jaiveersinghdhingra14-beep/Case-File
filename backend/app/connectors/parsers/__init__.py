@@ -5,6 +5,7 @@ WHY: The ingest pipeline calls get_parser(sample_lines) once per dataset. The re
 tests each parser in priority order and returns the first match. Adding a new format
 requires only creating a new parser file — no changes to this registry or the pipeline.
 """
+
 from __future__ import annotations
 
 from .auditd_parser import AuditdParser

@@ -28,11 +28,7 @@ class Settings(BaseSettings):
     DEFAULT_EXPANSION_WINDOW_SECONDS: int = 120
     DEFAULT_GROUP_GAP_SECONDS: int = 60
 
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore"
-    )
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     @property
     def abs_db_path(self) -> Path:

@@ -23,6 +23,7 @@ local causal neighborhood without loading the full 9+ million event dataset into
 Result: A tightly bounded subgraph (typically a few thousand events) that contains
 all relevant evidence, ready for deterministic graph correlation.
 """
+
 from __future__ import annotations
 
 import math
@@ -66,7 +67,9 @@ def expand_neighborhood(
 
         # Check for cross-host lateral movement targets
         if s.remote_address and s.remote_address.startswith("10.10.") and s.remote_address != s.host:
-            cross_hosts_to_query.add((s.remote_address, s.timestamp, s.timestamp + timedelta(seconds=window_seconds * 2)))
+            cross_hosts_to_query.add(
+                (s.remote_address, s.timestamp, s.timestamp + timedelta(seconds=window_seconds * 2))
+            )
 
     # Connect to DuckDB
     parquet_glob = duckdb_store.get_dataset_parquet_glob(dataset_id)
@@ -157,7 +160,10 @@ def expand_neighborhood(
         else:
             category = EventCategory.other
 
-        summary_text = rec.get("summary") or f"{rec.get('host')}: {rec.get('command_line') or rec.get('file_path') or rec.get('remote_address')}"
+        summary_text = (
+            rec.get("summary")
+            or f"{rec.get('host')}: {rec.get('command_line') or rec.get('file_path') or rec.get('remote_address')}"
+        )
 
         event = NormalizedEvent(
             event_id=eid,
@@ -173,12 +179,18 @@ def expand_neighborhood(
             command_line=rec.get("command_line") if rec.get("command_line") else None,
             file_path=rec.get("file_path") if rec.get("file_path") else None,
             remote_address=rec.get("remote_address") if rec.get("remote_address") else None,
-            remote_port=int(rec.get("remote_port")) if rec.get("remote_port") is not None and not math.isnan(rec.get("remote_port")) else None,
+            remote_port=int(rec.get("remote_port"))
+            if rec.get("remote_port") is not None and not math.isnan(rec.get("remote_port"))
+            else None,
             mitre_ids=m_list,
             summary=summary_text,
             source_file=rec.get("source_file"),
-            byte_offset=int(rec.get("byte_offset")) if rec.get("byte_offset") is not None and not math.isnan(rec.get("byte_offset")) else None,
-            byte_length=int(rec.get("byte_length")) if rec.get("byte_length") is not None and not math.isnan(rec.get("byte_length")) else None,
+            byte_offset=int(rec.get("byte_offset"))
+            if rec.get("byte_offset") is not None and not math.isnan(rec.get("byte_offset"))
+            else None,
+            byte_length=int(rec.get("byte_length"))
+            if rec.get("byte_length") is not None and not math.isnan(rec.get("byte_length"))
+            else None,
             rarity_score=0.0,
             is_seed=False,
         )

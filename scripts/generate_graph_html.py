@@ -6,6 +6,7 @@ Usage:
     python scripts/generate_graph_html.py ds_812ee6b0
     python scripts/generate_graph_html.py
 """
+
 import argparse
 import json
 import sys
@@ -192,9 +193,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
 def main():
     parser = argparse.ArgumentParser(description="Generate interactive HTML attack graph.")
-    parser.add_argument("dataset_id", nargs="?", default="", help="Dataset ID (e.g. ds_812ee6b0). Picks latest ready if omitted.")
+    parser.add_argument(
+        "dataset_id", nargs="?", default="", help="Dataset ID (e.g. ds_812ee6b0). Picks latest ready if omitted."
+    )
     parser.add_argument("--top-k", type=int, default=25, help="Number of seeds (default: 25)")
-    parser.add_argument("--open", action="store_true", default=True, help="Automatically open generated HTML in browser")
+    parser.add_argument(
+        "--open", action="store_true", default=True, help="Automatically open generated HTML in browser"
+    )
     args = parser.parse_args()
 
     db.init_db()

@@ -9,12 +9,20 @@ class CaseCreateRequest(BaseModel):
     dataset_id: str = Field(description="Dataset ID to build the case from.")
     name: str | None = Field(default=None, description="Label shown in UI.")
     window: TimeWindow | None = Field(default=None, description="Optional custom time window for investigation.")
-    host_names: list[str] | None = Field(default=None, description="Limit to specific hosts. Default: all hosts in dataset.")
+    host_names: list[str] | None = Field(
+        default=None, description="Limit to specific hosts. Default: all hosts in dataset."
+    )
     padding_seconds: int = Field(default=30, ge=0, le=300, description="Padding before and after time window.")
-    group_gap_seconds: int = Field(default=60, ge=10, le=600, description="Events further apart are split into separate groups.")
-    seed_top_k: int = Field(default=2000, ge=10, le=50000, description="Number of top rarity/suspicious seeds to select.")
+    group_gap_seconds: int = Field(
+        default=60, ge=10, le=600, description="Events further apart are split into separate groups."
+    )
+    seed_top_k: int = Field(
+        default=2000, ge=10, le=50000, description="Number of top rarity/suspicious seeds to select."
+    )
     expansion_hops: int = Field(default=2, ge=1, le=5, description="Graph traversal hop limit around seeds.")
-    expansion_window_seconds: int = Field(default=120, ge=10, le=3600, description="Time window for neighborhood expansion.")
+    expansion_window_seconds: int = Field(
+        default=120, ge=10, le=3600, description="Time window for neighborhood expansion."
+    )
     max_llm_calls: int = Field(default=200, ge=1, le=1000, description="Cap on total LLM calls per story.")
 
 
@@ -40,7 +48,9 @@ class Case(BaseModel):
     created_at: datetime = Field(description="Creation time (timezone.utc).")
     updated_at: datetime = Field(description="Last update time (timezone.utc).")
     window: TimeWindow | None = Field(default=None, description="Investigation time window.")
-    has_ground_truth: bool = Field(default=False, description="True only when ground truth labels exist for the dataset.")
+    has_ground_truth: bool = Field(
+        default=False, description="True only when ground truth labels exist for the dataset."
+    )
     stats: CaseStats | None = Field(default=None, description="Summary statistics when ready.")
     error_message: str | None = Field(default=None, description="Failure reason if failed.")
 

@@ -21,6 +21,7 @@ without OOM or hallucination, we apply deterministic mathematics:
    Pulls the top K (default K=2000) highest-scoring events using DuckDB out-of-core
    columnar aggregation — zero-copy, memory-safe, sub-second execution.
 """
+
 from __future__ import annotations
 
 import math
@@ -168,7 +169,10 @@ def get_top_k_seeds(
         else:
             category = EventCategory.other
 
-        summary_text = rec.get("summary") or f"{rec.get('host')}: {rec.get('command_line') or rec.get('file_path') or rec.get('remote_address')}"
+        summary_text = (
+            rec.get("summary")
+            or f"{rec.get('host')}: {rec.get('command_line') or rec.get('file_path') or rec.get('remote_address')}"
+        )
 
         event = NormalizedEvent(
             event_id=str(rec.get("event_id")),
@@ -184,12 +188,18 @@ def get_top_k_seeds(
             command_line=rec.get("command_line") if rec.get("command_line") else None,
             file_path=rec.get("file_path") if rec.get("file_path") else None,
             remote_address=rec.get("remote_address") if rec.get("remote_address") else None,
-            remote_port=int(rec.get("remote_port")) if rec.get("remote_port") is not None and not math.isnan(rec.get("remote_port")) else None,
+            remote_port=int(rec.get("remote_port"))
+            if rec.get("remote_port") is not None and not math.isnan(rec.get("remote_port"))
+            else None,
             mitre_ids=m_list,
             summary=summary_text,
             source_file=rec.get("source_file"),
-            byte_offset=int(rec.get("byte_offset")) if rec.get("byte_offset") is not None and not math.isnan(rec.get("byte_offset")) else None,
-            byte_length=int(rec.get("byte_length")) if rec.get("byte_length") is not None and not math.isnan(rec.get("byte_length")) else None,
+            byte_offset=int(rec.get("byte_offset"))
+            if rec.get("byte_offset") is not None and not math.isnan(rec.get("byte_offset"))
+            else None,
+            byte_length=int(rec.get("byte_length"))
+            if rec.get("byte_length") is not None and not math.isnan(rec.get("byte_length"))
+            else None,
             rarity_score=float(rec.get("rarity_score_val", 0.0)),
             is_seed=True,
         )
