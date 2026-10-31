@@ -90,10 +90,10 @@ def generate_mock_story_draft(events: Sequence[NormalizedEvent]) -> StoryDraftOu
 def generate_gemini_story_draft(
     events: Sequence[NormalizedEvent],
     api_key: str,
-    model_name: str = "gemini-2.0-flash",
+    model_name: str = "gemini-3.8-flash",
 ) -> tuple[StoryDraftOutput, int, int]:
     """
-    Invokes Gemini 2.0 Flash with a Tier-3 Principal DFIR SOC Analyst system instruction,
+    Invokes Gemini with a Tier-3 Principal DFIR SOC Analyst system instruction,
     forcing evidence-grounded Pydantic JSON schema output.
     Returns (StoryDraftOutput, prompt_tokens, output_tokens).
     """
@@ -129,19 +129,42 @@ def generate_gemini_story_draft(
         f"Return your analysis strictly matching the requested JSON schema."
     )
 
-    response = client.models.generate_content(
-        model=model_name,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=system_instruction,
-            response_mime_type="application/json",
-            response_schema=StoryDraftOutput,
-            temperature=0.1,
-        ),
-    )
+    candidate_models = [model_name]
+    for alt in ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-1.5-flash"]:
+        if alt not in candidate_models:
+            candidate_models.append(alt)
+
+    response = None
+    last_err = None
+
+    for m in candidate_models:
+        try:
+            response = client.models.generate_content(
+                model=m,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    response_mime_type="application/json",
+                    response_schema=StoryDraftOutput,
+                    temperature=0.1,
+                ),
+            )
+            break
+        except Exception as e:
+            last_err = e
+            err_str = str(e)
+            if "404" in err_str or "NOT_FOUND" in err_str or "not found" in err_str.lower():
+                continue
+            raise
+
+    if response is None:
+        raise last_err or RuntimeError("No response from Gemini candidate models.")
 
     in_tokens = getattr(getattr(response, "usage_metadata", None), "prompt_token_count", None) or len(events) * 45
     out_tokens = getattr(getattr(response, "usage_metadata", None), "candidates_token_count", None) or 150
+
+    parsed = StoryDraftOutput.model_validate_json(response.text)
+    return parsed, in_tokens, out_tokens
 
     parsed = StoryDraftOutput.model_validate_json(response.text)
     return parsed, in_tokens, out_tokens
@@ -153,16 +176,18 @@ def write_story_for_events(
     max_llm_calls: int = 200,
     api_key: str | None = None,
     force_mock: bool = False,
+    model_name: str | None = None,
 ) -> tuple[StoryDraftOutput, TokenUsage]:
     """
     Generate evidence-grounded story drafts across bounded event chunks with caching.
-    Supports real Gemini 2.0 Flash or deterministic offline MockLLM.
+    Supports real Gemini (e.g. gemini-3.8-flash) or deterministic offline MockLLM.
     """
     if not events:
         return StoryDraftOutput(summary="No events to summarize.", steps=[], assumptions=[]), TokenUsage()
 
     active_key = (api_key or settings.GEMINI_API_KEY).strip()
     use_gemini = bool(active_key and not force_mock)
+    target_model = model_name or settings.LLM_MODEL
 
     usage = TokenUsage()
     all_steps: list[StoryStepDraft] = []
@@ -185,19 +210,19 @@ def write_story_for_events(
             if use_gemini:
                 try:
                     print(
-                        f"  [LLM] Invoking Gemini 2.0 Flash ({len(chunk)} events in chunk) with DFIR Analyst persona..."
+                        f"  [LLM] Invoking Gemini ({target_model}, {len(chunk)} events in chunk) with DFIR Analyst persona..."
                     )
                     draft, in_tok, out_tok = generate_gemini_story_draft(
                         chunk,
                         api_key=active_key,
-                        model_name=settings.LLM_MODEL,
+                        model_name=target_model,
                     )
                     usage.input_tokens += in_tok
                     usage.output_tokens += out_tok
                     print(
                         f"  [LLM] Gemini response received ({len(draft.steps)} story steps, {in_tok} in / {out_tok} out tokens)."
                     )
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     import sys
 
                     print(f"[WARN] Gemini call failed ({e}); falling back to offline generator.", file=sys.stderr)

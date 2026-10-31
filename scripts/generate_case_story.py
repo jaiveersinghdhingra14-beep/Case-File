@@ -45,6 +45,12 @@ def main():
         default="",
         help="Gemini API Key (optional, can also be set via GEMINI_API_KEY env or .env)",
     )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="gemini-3.8-flash",
+        help="Gemini model name (default: gemini-3.8-flash)",
+    )
     parser.add_argument("--use-mock", action="store_true", help="Force offline MockLLM instead of real Gemini API")
     args = parser.parse_args()
 
@@ -129,6 +135,7 @@ def main():
         chunk_size=args.chunk_size,
         api_key=args.api_key,
         force_mock=args.use_mock,
+        model_name=args.model,
     )
     verified_steps, unsupported = verify_all_steps(draft.steps, events_by_id)
     t_story = time.perf_counter() - t1
@@ -138,7 +145,7 @@ def main():
 
     active_key = (args.api_key or db.settings.GEMINI_API_KEY).strip()
     is_gemini_active = bool(active_key and not args.use_mock)
-    model_label = "gemini-2.0-flash (SOC Analyst AI)" if is_gemini_active else "MockLLM-Verified"
+    model_label = f"{args.model} (SOC Analyst AI)" if is_gemini_active else "MockLLM-Verified"
 
     story = Story(
         story_id=story_id,

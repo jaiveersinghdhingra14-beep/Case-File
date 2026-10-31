@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     # LLM Settings
     LLM_PROVIDER: str = "gemini"
     GEMINI_API_KEY: str = ""
-    LLM_MODEL: str = "gemini-2.0-flash"
+    LLM_MODEL: str = "gemini-3.8-flash"
     USE_MOCK_LLM: bool = True
     MAX_LLM_CALLS: int = 200
 
