@@ -73,6 +73,30 @@ class PipelineRunRequest(BaseModel):
     workers: int | None = None
 
 
+def resolve_log_path(target_str: str) -> Path | None:
+    """Intelligently resolves a user-supplied log file path or directory."""
+    p = Path(target_str)
+    if p.exists() and p.is_file():
+        return p
+    for ext in [".log", ".txt", ".json", ".csv", ".jsonl"]:
+        candidate = p.with_suffix(ext)
+        if candidate.exists() and candidate.is_file():
+            return candidate
+    if p.exists() and p.is_dir():
+        candidates = (
+            list(p.glob("*.log"))
+            + list(p.glob("*.txt"))
+            + list(p.glob("*.json"))
+            + list(p.glob("*.csv"))
+            + list(p.glob("*"))
+        )
+        file_candidates = [c for c in candidates if c.is_file() and not c.name.startswith(".")]
+        if file_candidates:
+            file_candidates.sort(key=lambda f: f.stat().st_size, reverse=True)
+            return file_candidates[0]
+    return None
+
+
 @router.get("/pipeline/status")
 def get_pipeline_status() -> dict[str, Any]:
     """Poll the real-time progress of the active ingestion pipeline."""
@@ -141,9 +165,11 @@ def run_pipeline_endpoint(
                     dataset_id = clean_target
                     target_file = Path(existing_ds.path)
                 else:
-                    target_file = Path(clean_target)
+                    resolved = resolve_log_path(clean_target)
+                    target_file = resolved or Path(clean_target)
             else:
-                target_file = Path(clean_target)
+                resolved = resolve_log_path(clean_target)
+                target_file = resolved or Path(clean_target)
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -157,39 +183,55 @@ def run_pipeline_endpoint(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Target file or dataset ID not found: {target_file}",
             )
+        if target_file.is_dir():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Target '{target_file}' is a directory with no readable log files. Please provide a log file.",
+            )
 
-        _update_status("running", "Profiling", 15, f"Profiling log format for {target_file.name}...")
-        meta = profile_file(str(target_file))
-        dataset_id = f"ds_{abs(hash(str(target_file))) % 100000000:08x}"
-        fmt_name = meta.format_name.upper()
+        try:
+            _update_status("running", "Profiling", 15, f"Profiling log format for {target_file.name}...")
+            meta = profile_file(str(target_file))
+            dataset_id = f"ds_{abs(hash(str(target_file))) % 100000000:08x}"
+            fmt_name = meta.format_name.upper()
 
-        dataset = Dataset(
-            dataset_id=dataset_id,
-            name=target_file.name,
-            path=str(target_file.resolve()),
-            size_bytes=target_file.stat().st_size,
-            format=fmt_name,
-            status=DatasetStatus.registered,
-            events_total=0,
-            hosts=[],
-            created_at=datetime.now(timezone.utc),
-        )
-        db.save_dataset(dataset)
+            dataset = Dataset(
+                dataset_id=dataset_id,
+                name=target_file.name,
+                path=str(target_file.resolve()),
+                size_bytes=target_file.stat().st_size,
+                format=fmt_name,
+                status=DatasetStatus.registered,
+                events_total=0,
+                hosts=[],
+                created_at=datetime.now(timezone.utc),
+            )
+            db.save_dataset(dataset)
 
-        num_workers = workers or 4
-        _update_status("running", "Streaming Ingestion", 25, f"Streaming {target_file.name} into columnar Parquet...")
-        report = ingest_dataset_sync(
-            dataset_id=dataset_id,
-            batch_size=10000,
-            num_workers=num_workers,
-        )
-        _update_status(
-            "running",
-            "Ingestion Complete",
-            35,
-            f"Ingested {getattr(report, 'rows_out', 0):,} events into Parquet.",
-            dataset_id=dataset_id,
-        )
+            num_workers = workers or 4
+            _update_status("running", "Streaming Ingestion", 25, f"Streaming {target_file.name} into columnar Parquet...")
+            report = ingest_dataset_sync(
+                dataset_id=dataset_id,
+                batch_size=10000,
+                num_workers=num_workers,
+            )
+            _update_status(
+                "running",
+                "Ingestion Complete",
+                35,
+                f"Ingested {getattr(report, 'rows_out', 0):,} events into Parquet.",
+                dataset_id=dataset_id,
+            )
+        except PermissionError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot open '{target_file}': {e}. Verify the path is a file and not locked.",
+            ) from e
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Ingestion failed on '{target_file.name}': {e}",
+            ) from e
 
     ds = db.get_dataset(dataset_id)
     if not ds:
