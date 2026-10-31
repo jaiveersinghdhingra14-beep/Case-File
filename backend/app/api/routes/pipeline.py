@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from ...config import settings
@@ -79,13 +79,27 @@ def get_pipeline_status() -> dict[str, Any]:
     return _PIPELINE_STATUS
 
 
+@router.post("/pipeline/upload")
+async def upload_log_file(request: Request, filename: str) -> dict[str, Any]:
+    """Stream raw uploaded log file directly to disk under 8GB RAM."""
+    upload_dir = settings.BASE_DIR / "data" / "uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    clean_fname = Path(filename).name
+    dest_path = upload_dir / clean_fname
+    _update_status("running", "Uploading", 10, f"Saving {clean_fname} to disk...")
+    with dest_path.open("wb") as buffer:
+        async for chunk in request.stream():
+            buffer.write(chunk)
+    return {"success": True, "filename": clean_fname, "path": str(dest_path.resolve())}
+
+
 @router.post("/pipeline/run")
 def run_pipeline_endpoint(
     req: PipelineRunRequest | None = None,
 ) -> dict[str, Any]:
     """
     Executes the full end-to-end incident pipeline:
-    1. Direct file upload OR local file path / existing dataset ID.
+    1. Direct streaming file upload OR local file path / existing dataset ID.
     2. Streaming ingestion into Parquet (memory < 8GB).
     3. High-velocity attack pattern detection.
     4. 8-Thread DuckDB noise reduction & 2-hop graph expansion.
@@ -101,34 +115,35 @@ def run_pipeline_endpoint(
 
     _update_status("running", "Initializing", 5, "Initializing pipeline execution...")
 
-    # 1. Determine Target (Upload vs Local Path vs Existing Dataset ID)
+    target_file = None
+    target = req.target
+    top_k = req.top_k
+    chunk_size = req.chunk_size
+    workers = req.workers
+
     if req.file_content and req.file_content.strip():
         upload_dir = settings.BASE_DIR / "data" / "uploads"
         upload_dir.mkdir(parents=True, exist_ok=True)
         fname = req.filename or f"uploaded_{int(time.time())}.log"
         dest_path = upload_dir / fname
-        _update_status("running", "Uploading", 10, f"Saving uploaded log payload to {fname}...")
-
+        _update_status("running", "Uploading", 10, f"Saving log payload to {fname}...")
         dest_path.write_text(req.file_content, encoding="utf-8")
         target_file = dest_path
-    elif req.target and req.target.strip():
-        clean_target = req.target.strip().strip("'\"")
-        # Check if existing dataset ID was passed
-        if clean_target.startswith("ds_"):
-            existing_ds = db.get_dataset(clean_target)
-            if existing_ds:
-                dataset_id = clean_target
-                target_file = Path(existing_ds.path)
+
+    # 1. Determine Target (Upload vs Local Path vs Existing Dataset ID)
+    if target_file is None:
+        if target and target.strip():
+            clean_target = target.strip().strip("'\"")
+            # Check if existing dataset ID was passed
+            if clean_target.startswith("ds_"):
+                existing_ds = db.get_dataset(clean_target)
+                if existing_ds:
+                    dataset_id = clean_target
+                    target_file = Path(existing_ds.path)
+                else:
+                    target_file = Path(clean_target)
             else:
                 target_file = Path(clean_target)
-        else:
-            target_file = Path(clean_target)
-    else:
-        # Check if default dataset exists
-        all_ds = db.list_datasets()
-        if all_ds:
-            dataset_id = all_ds[0].dataset_id
-            target_file = Path(all_ds[0].path)
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -161,7 +176,7 @@ def run_pipeline_endpoint(
         )
         db.save_dataset(dataset)
 
-        num_workers = req.workers or 4
+        num_workers = workers or 4
         _update_status("running", "Streaming Ingestion", 25, f"Streaming {target_file.name} into columnar Parquet...")
         report = ingest_dataset_sync(
             dataset_id=dataset_id,
@@ -197,8 +212,8 @@ def run_pipeline_endpoint(
     patterns = detect_attack_patterns(dataset_id=dataset_id)
 
     # 5. Noise Reduction & 2-Hop Graph Expansion
-    _update_status("running", "Noise Reduction", 55, f"Mining Top-{req.top_k} seeds & expanding 2-hop neighborhood...")
-    seeds = get_top_k_seeds(dataset_id, top_k=req.top_k, min_rarity_score=0.1)
+    _update_status("running", "Noise Reduction", 55, f"Mining Top-{top_k} seeds & expanding 2-hop neighborhood...")
+    seeds = get_top_k_seeds(dataset_id, top_k=top_k, min_rarity_score=0.1)
     expanded = expand_neighborhood(dataset_id, seeds, window_seconds=120, max_expanded_events=2000)
 
     # 6. Raw Data Post-Processing & Adversarial Anti-Evasion
@@ -231,7 +246,7 @@ def run_pipeline_endpoint(
     _update_status("running", "AI Story Synthesis", 80, f"Synthesizing threat narrative via {settings.GROQ_MODEL}...")
     draft, usage = write_story_for_events(
         expanded,
-        chunk_size=req.chunk_size,
+        chunk_size=chunk_size,
         model_name=settings.GROQ_MODEL,
         patterns=patterns,
         provider=settings.LLM_PROVIDER,

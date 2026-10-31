@@ -1236,34 +1236,36 @@ def build_dashboard_html(
         }} catch (_) {{}}
       }}, 1000);
 
-      let fileContent = null;
-      let fileName = null;
-      if (selectedUploadFile) {{
-        fileName = selectedUploadFile.name;
-        if (msgEl) msgEl.innerText = 'Reading file in browser...';
-        fileContent = await new Promise((resolve, reject) => {{
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result);
-          reader.onerror = () => reject(new Error('Failed to read selected file'));
-          reader.readAsText(selectedUploadFile);
-        }});
-      }}
-
-      const payload = {{
-        target: targetVal || null,
-        filename: fileName,
-        file_content: fileContent,
-        top_k: parseInt(topK) || 50,
-        chunk_size: parseInt(chunkSize) || 20
-      }};
-
       try {{
+        let finalTarget = targetVal;
+
+        // If a file was selected, stream it directly to disk via /api/v1/pipeline/upload
+        if (selectedUploadFile) {{
+          if (msgEl) msgEl.innerText = 'Streaming ' + selectedUploadFile.name + ' (' + (selectedUploadFile.size / (1024 * 1024)).toFixed(1) + ' MB) to disk...';
+          const upRes = await fetch('/api/v1/pipeline/upload?filename=' + encodeURIComponent(selectedUploadFile.name), {{
+            method: 'POST',
+            headers: {{ 'Content-Type': 'application/octet-stream' }},
+            body: selectedUploadFile,
+          }});
+          if (!upRes.ok) {{
+            throw new Error('Log upload failed. Check file size and server connection.');
+          }}
+          const upData = await upRes.json();
+          finalTarget = upData.path;
+        }}
+
+        // Run DFIR Incident Reconstruction
+        if (msgEl) msgEl.innerText = 'Starting incident reconstruction...';
         const response = await fetch('/api/v1/pipeline/run', {{
           method: 'POST',
           headers: {{
             'Content-Type': 'application/json'
           }},
-          body: JSON.stringify(payload),
+          body: JSON.stringify({{
+            target: finalTarget,
+            top_k: parseInt(topK) || 50,
+            chunk_size: parseInt(chunkSize) || 20
+          }}),
         }});
 
         if (pollInterval) clearInterval(pollInterval);
