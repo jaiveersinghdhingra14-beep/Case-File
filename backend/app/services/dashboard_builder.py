@@ -637,16 +637,28 @@ def build_dashboard_html(
 
     # Prepare timeline steps with exact timestamps, elapsed offsets, and stages
     events_by_id = {e.event_id: e for e in candidate_events}
-    all_ts = [e.timestamp for e in candidate_events if e.timestamp]
+    # Calculate exact campaign start aligned with the earliest story step for perfect T + 00:00s baseline
+    step_start_times = []
     for s in story.steps:
+        st = []
         if s.started_at:
-            all_ts.append(s.started_at)
+            st.append(s.started_at)
         if s.ended_at:
-            all_ts.append(s.ended_at)
+            st.append(s.ended_at)
         for ev in getattr(s, "evidence", []):
             if ev.timestamp:
-                all_ts.append(ev.timestamp)
-    campaign_start = min(all_ts) if all_ts else datetime(2026, 10, 23, 8, 51, 0, tzinfo=timezone.utc)
+                st.append(ev.timestamp)
+        for eid in getattr(s, "evidence_event_ids", []):
+            if eid in events_by_id and events_by_id[eid].timestamp:
+                st.append(events_by_id[eid].timestamp)
+        if st:
+            step_start_times.append(min(st))
+
+    if step_start_times:
+        campaign_start = min(step_start_times)
+    else:
+        all_ts = [e.timestamp for e in candidate_events if e.timestamp]
+        campaign_start = min(all_ts) if all_ts else datetime(2026, 10, 23, 8, 51, 0, tzinfo=timezone.utc)
 
     steps_metadata = []
     stage_counts = {1: 0, 2: 0, 3: 0, 4: 0}
