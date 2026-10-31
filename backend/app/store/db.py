@@ -8,6 +8,7 @@ from ..schemas import (
     BenchmarkReport,
     Case,
     Dataset,
+    DatasetStatus,
     Evaluation,
     IncidentPath,
     IncidentSummary,
@@ -107,6 +108,29 @@ def init_db() -> None:
 # -----------------------------------------------------------------------------
 # Dataset Operations
 # -----------------------------------------------------------------------------
+
+
+def create_dataset(
+    dataset_id: str,
+    name: str,
+    file_path: str,
+    file_size_bytes: int,
+    format_name: str,
+) -> Dataset:
+    """Helper to create and persist a new dataset in registered status."""
+    ds = Dataset(
+        dataset_id=dataset_id,
+        name=name,
+        path=file_path,
+        size_bytes=file_size_bytes,
+        format=format_name,
+        status=DatasetStatus.registered,
+        events_total=0,
+        hosts=[],
+        created_at=datetime.now(timezone.utc),
+    )
+    save_dataset(ds)
+    return ds
 
 
 def save_dataset(ds: Dataset) -> None:

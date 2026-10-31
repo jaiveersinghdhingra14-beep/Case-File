@@ -39,7 +39,16 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from backend.app.config import settings
-from backend.app.schemas import Case, CaseStats, CaseStatus, Method, Story, StoryStatus
+from backend.app.schemas import (
+    Case,
+    CaseStats,
+    CaseStatus,
+    Dataset,
+    DatasetStatus,
+    Method,
+    Story,
+    StoryStatus,
+)
 from backend.app.services.correlator import correlate_incident_paths
 from backend.app.services.dashboard_builder import build_dashboard_html
 from backend.app.services.expander import expand_neighborhood
@@ -124,22 +133,42 @@ def cmd_ingest(args: argparse.Namespace) -> str | None:
     print(f"\n[Stage 1/2] Profiling: Detected Format '{fmt_name.upper()}' ({time.perf_counter() - t0:.3f}s)")
 
     # Create dataset record
-    db.create_dataset(
+    dataset = Dataset(
         dataset_id=dataset_id,
         name=ds_name,
-        file_path=str(file_path.resolve()),
-        file_size_bytes=file_path.stat().st_size,
-        format_name=fmt_name,
+        path=str(file_path.resolve()),
+        size_bytes=file_path.stat().st_size,
+        format=fmt_name,
+        status=DatasetStatus.registered,
+        events_total=0,
+        hosts=[],
+        created_at=datetime.now(timezone.utc),
     )
+    db.save_dataset(dataset)
 
     # Ingest
     workers = args.workers or min(os.cpu_count() or 4, 8)
     print(f"[Stage 2/2] Streaming ingestion into Parquet (Batch: {args.batch_size:,} | Workers: {workers})...")
+    last_update = time.perf_counter()
+
+    def progress_callback(rows_in: int, rows_out: int):
+        nonlocal last_update
+        now = time.perf_counter()
+        if now - last_update >= 0.75:
+            print(
+                f"\r  [Streaming Ingestion] Progress: {rows_in:,} raw lines read | {rows_out:,} events structured",
+                end="",
+                flush=True,
+            )
+            last_update = now
+
     report = ingest_dataset_sync(
         dataset_id=dataset_id,
         batch_size=args.batch_size,
         num_workers=workers,
+        progress_callback=progress_callback,
     )
+    print()  # newline after streaming progress
 
     print("\n" + "=" * 80)
     print("   Ingestion Complete & Benchmark Verified")
