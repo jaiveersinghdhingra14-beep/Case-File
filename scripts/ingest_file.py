@@ -47,26 +47,7 @@ def main():
     print(f"Target File : {target_path}")
     print(f"File Size   : {file_size_mb:.2f} MB ({file_size_gb:.2f} GB)")
 
-    # 1. Register Dataset
-    db.init_db()
-    ds_id = db.generate_id("ds_")
-    ds_name = args.name or target_path.name
-
-    dataset = Dataset(
-        dataset_id=ds_id,
-        name=ds_name,
-        path=str(target_path),
-        size_bytes=file_size_bytes,
-        format="unknown",
-        status=DatasetStatus.registered,
-        events_total=0,
-        hosts=[],
-        created_at=datetime.now(timezone.utc),
-    )
-    db.save_dataset(dataset)
-    print(f"Dataset ID  : {ds_id}")
-
-    # 2. Run Profiler
+    # 1. Run Profiler
     print("\n[Stage 1/2] Profiling log format & sample schema...")
     t0 = time.perf_counter()
     profile = profile_file(target_path)
@@ -76,6 +57,25 @@ def main():
     print(f"  Sample Hosts    : {', '.join(profile.hosts_sample[:5]) or 'N/A'}")
     print(f"  Estimated Lines : ~{profile.estimated_lines:,}")
     print(f"  Profiling Time  : {prof_time:.3f}s (sub-second micro-slice)")
+
+    # 2. Register Dataset
+    db.init_db()
+    ds_id = db.generate_id("ds_")
+    ds_name = args.name or target_path.name
+
+    dataset = Dataset(
+        dataset_id=ds_id,
+        name=ds_name,
+        path=str(target_path),
+        size_bytes=file_size_bytes,
+        format=profile.format_name,
+        status=DatasetStatus.registered,
+        events_total=0,
+        hosts=[],
+        created_at=datetime.now(timezone.utc),
+    )
+    db.save_dataset(dataset)
+    print(f"Dataset ID  : {ds_id}")
 
     # 3. Run Ingest
     print(f"\n[Stage 2/2] Streaming ingestion into Parquet (Batch Size: {args.batch_size:,} | Workers: {args.workers})...")

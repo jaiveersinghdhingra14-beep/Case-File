@@ -356,6 +356,7 @@ def ingest_dataset_sync(
 
     # 5. Update Dataset metadata
     ds.status = DatasetStatus.ready
+    ds.format = fmt_name
     ds.events_total = rows_out
     ds.hosts = sorted(discovered_hosts)[:50]
     if earliest_ts and latest_ts and latest_ts > earliest_ts:
