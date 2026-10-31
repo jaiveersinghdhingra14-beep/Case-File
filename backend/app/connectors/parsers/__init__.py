@@ -10,11 +10,13 @@ from __future__ import annotations
 from .auditd_parser import AuditdParser
 from .base import BaseParser
 from .csv_parser import CsvParser
+from .fortigate_parser import FortigateParser
 from .jsonlines_parser import JsonLinesParser
 from .syslog_parser import SyslogParser
 
 # Priority order: most specific first
 _PARSER_CLASSES: list[type[BaseParser]] = [
+    FortigateParser,
     AuditdParser,
     JsonLinesParser,
     SyslogParser,
@@ -37,6 +39,7 @@ def get_parser(sample_lines: list[str]) -> BaseParser | None:
 def get_format_name(parser: BaseParser) -> str:
     """Return a human-readable format name for a parser instance."""
     name_map = {
+        FortigateParser: "fortigate",
         AuditdParser: "auditd",
         JsonLinesParser: "jsonlines",
         SyslogParser: "syslog",
@@ -49,6 +52,7 @@ __all__ = [
     "AuditdParser",
     "BaseParser",
     "CsvParser",
+    "FortigateParser",
     "JsonLinesParser",
     "SyslogParser",
     "get_format_name",

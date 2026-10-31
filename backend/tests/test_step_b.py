@@ -14,6 +14,7 @@ from pathlib import Path
 from backend.app.connectors.parsers import get_format_name, get_parser
 from backend.app.connectors.parsers.auditd_parser import AuditdParser
 from backend.app.connectors.parsers.csv_parser import CsvParser
+from backend.app.connectors.parsers.fortigate_parser import FortigateParser
 from backend.app.connectors.parsers.jsonlines_parser import JsonLinesParser
 from backend.app.connectors.parsers.syslog_parser import SyslogParser
 from backend.app.services.profiler import profile_file
@@ -44,6 +45,11 @@ class TestFormatDetection:
     def test_csv_detected(self):
         lines = (FIXTURES / "sample_csv.log").read_text().splitlines()
         parser = CsvParser()
+        assert parser.can_parse(lines[:5]) is True
+
+    def test_fortigate_detected(self):
+        lines = (FIXTURES / "sample_fortigate.log").read_text().splitlines()
+        parser = FortigateParser()
         assert parser.can_parse(lines[:5]) is True
 
     def test_no_cross_detection(self):
@@ -134,6 +140,27 @@ class TestSyslogParsing:
         assert result["category"] == "authentication"
 
 
+class TestFortigateParsing:
+    def test_extracts_utm_fields(self):
+        line = (FIXTURES / "sample_fortigate.log").read_text().splitlines()[0]
+        parser = FortigateParser()
+        result = parser.parse_line(line)
+        assert result is not None
+        assert result["host"] == "10.10.40.156"
+        assert result["remote_address"] == "11.113.232.73"
+        assert result["remote_port"] == 53
+        assert result["category"] == "network"
+        assert "nytimes.com" in result["summary"]
+
+    def test_extracts_blocked_c2_threat(self):
+        line = (FIXTURES / "sample_fortigate.log").read_text().splitlines()[2]
+        parser = FortigateParser()
+        result = parser.parse_line(line)
+        assert result is not None
+        assert "T1071.004" in result["mitre_ids"]
+        assert result["kill_chain_stage"] == "Command and Control"
+
+
 # ---------------------------------------------------------------------------
 # 3. Parser Registry (auto-selection)
 # ---------------------------------------------------------------------------
@@ -183,6 +210,12 @@ class TestProfiler:
         assert result.format_name == "syslog"
         assert result.parser is not None
         assert result.size_bytes > 0
+
+    def test_profiles_fortigate_file(self):
+        result = profile_file(FIXTURES / "sample_fortigate.log")
+        assert result.format_name == "fortigate"
+        assert result.parser is not None
+        assert "10.10.40.156" in result.hosts_sample
 
     def test_multihost_detection(self):
         """Profiler should detect multiple hosts (HR-07, FS-02) from JSONL sample."""

@@ -12,8 +12,13 @@ class DuckDBStore:
     """Out-of-core columnar query engine for partitioned Parquet event sets."""
 
     def __init__(self, parquet_base_dir: Path | None = None):
-        self.base_dir = parquet_base_dir or settings.abs_parquet_dir
-        self.base_dir.mkdir(parents=True, exist_ok=True)
+        self._custom_base_dir = parquet_base_dir
+
+    @property
+    def base_dir(self) -> Path:
+        p = self._custom_base_dir or settings.abs_parquet_dir
+        p.mkdir(parents=True, exist_ok=True)
+        return p
 
     def get_dataset_parquet_glob(self, dataset_id: str) -> str:
         ds_dir = self.base_dir / dataset_id

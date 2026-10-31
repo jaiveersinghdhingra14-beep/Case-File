@@ -11,6 +11,7 @@ from ...schemas import (
     DatasetList,
     DatasetStatus,
 )
+from ...services.ingest import ingest_dataset_sync
 from ...store import db
 from ..errors import dataset_unreachable, not_found
 
@@ -72,7 +73,7 @@ def ingest_dataset(dataset_id: str, background_tasks: BackgroundTasks) -> Datase
     ds.status = DatasetStatus.ingesting
     db.save_dataset(ds)
 
-    # In Step B, background_tasks.add_task(run_ingest, dataset_id) will be wired
+    background_tasks.add_task(ingest_dataset_sync, dataset_id)
     return DatasetAccepted(dataset_id=dataset_id, status=ds.status)
 
 
