@@ -105,6 +105,9 @@ def generate_groq_story_draft(
     forcing evidence-grounded JSON schema output.
     Returns (StoryDraftOutput, prompt_tokens, output_tokens).
     """
+    if any(bad in model_name.lower() for bad in ["gpt-oss", "openai/", "mixtral"]):
+        model_name = "llama-3.3-70b-versatile"
+
     import json
 
     from groq import Groq
@@ -501,6 +504,8 @@ def write_story_for_events(
             return c_idx, _LLM_CACHE[chunk_hash], 0, 0, True
 
         target_model = model_name or (settings.GROQ_MODEL if use_groq else settings.LLM_MODEL)
+        if use_groq and any(bad in str(target_model).lower() for bad in ["gpt-oss", "openai/", "mixtral"]):
+            target_model = "llama-3.3-70b-versatile"
         if use_groq:
             try:
                 print(f"  [LLM Worker {c_idx}] Invoking Groq ({target_model}, {len(chunk)} events in chunk)...")

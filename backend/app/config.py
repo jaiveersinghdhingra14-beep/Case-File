@@ -1,7 +1,18 @@
 from pathlib import Path
 
+import dotenv
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_base_dir = Path(__file__).resolve().parent.parent.parent
+_env_path = _base_dir / ".env"
+_env_example_path = _base_dir / ".env.example"
+
+# Forcefully load .env with override=True so file values take precedence over stale shell variables
+if _env_path.exists():
+    dotenv.load_dotenv(_env_path, override=True)
+elif _env_example_path.exists():
+    dotenv.load_dotenv(_env_example_path, override=True)
 
 
 class Settings(BaseSettings):
@@ -19,7 +30,7 @@ class Settings(BaseSettings):
     MAX_LLM_CALLS: int = 200
 
     # Storage Paths
-    BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent
+    BASE_DIR: Path = _base_dir
     DATABASE_PATH: str = "casefile_meta.db"
     PARQUET_STORAGE_DIR: str = "data/parquet"
     MAX_RAM_BUDGET_GB: float = 8.0
@@ -32,23 +43,27 @@ class Settings(BaseSettings):
     DEFAULT_GROUP_GAP_SECONDS: int = 60
 
     model_config = SettingsConfigDict(
-        env_file=(str(Path(__file__).resolve().parent.parent.parent / ".env"), ".env"),
+        env_file=(str(_env_path), str(_env_example_path), ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
 
     @model_validator(mode="after")
     def sync_models(self) -> "Settings":
-        # Ensure Groq model syncs seamlessly whether user sets GROQ_MODEL or LLM_MODEL in .env
-        if (
-            self.LLM_PROVIDER.lower() == "groq"
-            and self.LLM_MODEL
-            and "gemini" not in self.LLM_MODEL.lower()
-            and (not self.GROQ_MODEL or self.GROQ_MODEL == "llama-3.3-70b-versatile")
-        ):
-            self.GROQ_MODEL = self.LLM_MODEL
-        if self.GROQ_MODEL:
-            self.LLM_MODEL = self.GROQ_MODEL
+        # Auto-correct obsolete or invalid Groq models (e.g. openai/gpt-oss-120b, mixtral)
+        if self.LLM_PROVIDER.lower() == "groq":
+            if any(bad in self.GROQ_MODEL.lower() for bad in ["gpt-oss", "openai/", "mixtral"]):
+                self.GROQ_MODEL = "llama-3.3-70b-versatile"
+                self.LLM_MODEL = "llama-3.3-70b-versatile"
+
+            if (
+                self.LLM_MODEL
+                and "gemini" not in self.LLM_MODEL.lower()
+                and (not self.GROQ_MODEL or self.GROQ_MODEL == "llama-3.3-70b-versatile")
+            ):
+                self.GROQ_MODEL = self.LLM_MODEL
+            if self.GROQ_MODEL:
+                self.LLM_MODEL = self.GROQ_MODEL
         return self
 
     @property
