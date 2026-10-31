@@ -73,7 +73,7 @@ def run_case_pipeline(case_id: str, req: CaseCreateRequest) -> None:
         case.updated_at = datetime.now(timezone.utc)
         db.save_case(case)
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         case.status = CaseStatus.failed
         case.error_message = str(e)
         case.updated_at = datetime.now(timezone.utc)

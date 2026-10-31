@@ -1,8 +1,36 @@
 from datetime import datetime
+from enum import Enum
 
 from pydantic import BaseModel, Field
 
 from .common import KillChainStage
+
+
+class PatternType(str, Enum):
+    BRUTE_FORCE = "brute_force"
+    EXPLOIT_WAVE = "exploit_wave"
+    RECON_SWEEP = "recon_sweep"
+    C2_BEACONING = "c2_beaconing"
+    LATERAL_MOVEMENT = "lateral_movement"
+    ANOMALOUS_BURST = "anomalous_burst"
+
+
+class AttackPattern(BaseModel):
+    pattern_id: str = Field(description="Unique pattern cluster ID, e.g. pat_01")
+    pattern_type: PatternType = Field(description="Type of pattern (e.g. brute_force, exploit_wave, c2_beaconing)")
+    title: str = Field(description="Human-readable title describing the pattern burst")
+    mitre_id: str = Field(description="Primary MITRE ATT&CK ID (e.g. T1110, T1190, T1071)")
+    technique_name: str = Field(description="Name of MITRE technique")
+    kill_chain_stage: KillChainStage = Field(description="Cyber kill chain stage")
+    target_host: str = Field(description="Primary target host or IP")
+    source_ip: str | None = Field(default=None, description="Source attacker or pivot IP")
+    attempt_count: int = Field(description="Number of attempts/events in this burst cluster")
+    start_time: datetime = Field(description="Start time of burst")
+    end_time: datetime = Field(description="End time of burst")
+    duration_seconds: float = Field(default=0.0, description="Duration in seconds")
+    velocity_attempts_per_sec: float = Field(default=0.0, description="Rate of attack")
+    evidence_event_ids: list[str] = Field(default_factory=list, description="IDs of sample events proving this pattern")
+    status: str = Field(default="blocked", description="Firewall or system action (blocked, allowed, mixed)")
 
 
 class IncidentStep(BaseModel):

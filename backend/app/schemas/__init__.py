@@ -45,11 +45,13 @@ from .events import (
     NormalizedEvent,
 )
 from .incident import (
+    AttackPattern,
     IncidentList,
     IncidentPath,
     IncidentStep,
     IncidentSummary,
     LookaheadReach,
+    PatternType,
 )
 from .internal import (
     DetectionRuleConfig,
@@ -78,6 +80,7 @@ from .story import (
 __all__ = [
     "ActivityGroup",
     "AnalystDecision",
+    "AttackPattern",
     "BenchmarkReport",
     "Case",
     "CaseAccepted",
@@ -115,6 +118,7 @@ __all__ = [
     "MethodResult",
     "Metrics",
     "NormalizedEvent",
+    "PatternType",
     "RawEvent",
     "ReportResponse",
     "ReviewOutcome",

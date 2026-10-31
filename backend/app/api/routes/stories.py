@@ -73,7 +73,7 @@ def run_story_pipeline(story_id: str, case_id: str, req: StoryCreateRequest) -> 
         story.updated_at = datetime.now(timezone.utc)
         db.save_story(story)
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         story.status = StoryStatus.failed
         story.failure_reason = str(e)
         story.updated_at = datetime.now(timezone.utc)
