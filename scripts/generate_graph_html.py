@@ -8,9 +8,9 @@ Usage:
 """
 import argparse
 import json
-from pathlib import Path
 import sys
 import webbrowser
+from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
@@ -23,7 +23,6 @@ from backend.app.services.correlator import (
 from backend.app.services.expander import expand_neighborhood
 from backend.app.services.reducer import get_top_k_seeds
 from backend.app.store import db
-
 
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
@@ -139,10 +138,36 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       if (params.edges.length > 0) {
         const edgeId = params.edges[0];
         const edge = data.edges.get(edgeId);
+
+        let localTimeStr = "N/A";
+        if (edge.iso_timestamp) {
+          try {
+            localTimeStr = new Date(edge.iso_timestamp).toLocaleString(undefined, {
+              dateStyle: "medium",
+              timeStyle: "medium"
+            });
+          } catch (e) {
+            localTimeStr = edge.timestamp || "N/A";
+          }
+        }
+
         document.getElementById("details-text").innerHTML = `
-          <strong>Connection:</strong> ${edge.from} &rarr; ${edge.to}<br>
-          <strong>Technique:</strong> <span class="tag">${edge.label}</span><br>
-          <pre style="margin-top:8px; font-size:11px; background:#020617; padding:8px; border-radius:4px; white-space:pre-wrap;">${edge.title || 'Telemetry Edge'}</pre>
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <div><strong style="color:#94a3b8">Connection:</strong> <span style="color:#38bdf8; font-weight:600;">${edge.from}</span> &rarr; <span style="color:#a855f7; font-weight:600;">${edge.to}</span></div>
+            <div><strong style="color:#94a3b8">MITRE Technique:</strong> <span class="tag">${edge.technique_id || edge.label}</span> <span style="color:#f8fafc; font-weight:600;">${edge.technique_name || ''}</span></div>
+            <div><strong style="color:#94a3b8">Kill Chain Stage:</strong> <span style="color:#f59e0b; font-weight:600;">${edge.stage || 'Command and Control'}</span></div>
+            <div style="background:#020617; border:1px solid #334155; padding:8px 10px; border-radius:6px; margin:4px 0;">
+              <div style="font-size:11px; color:#64748b; text-transform:uppercase; font-weight:700; margin-bottom:2px;">Event Timestamp</div>
+              <div style="color:#34d399; font-weight:700; font-size:13px;">${edge.timestamp || 'N/A'}</div>
+              <div style="color:#94a3b8; font-size:11px; margin-top:2px;">Local Time: ${localTimeStr}</div>
+            </div>
+            <div><strong style="color:#94a3b8">Observed Evidence:</strong>
+              <div style="margin-top:4px; font-size:12px; background:#020617; padding:8px; border-radius:6px; border:1px solid #334155; color:#e2e8f0; word-break:break-word;">
+                ${edge.detail || 'Telemetry communication link verified.'}
+              </div>
+            </div>
+            ${edge.event_id ? `<div style="font-size:11px; color:#64748b; margin-top:2px;">Citing Event ID: <code>${edge.event_id}</code></div>` : ''}
+          </div>
         `;
       }
     });

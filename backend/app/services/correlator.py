@@ -14,7 +14,6 @@ Judges need to inspect:
 """
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
 
 import networkx as nx
@@ -23,7 +22,6 @@ from ..schemas import (
     IncidentPath,
     IncidentStep,
     KillChainStage,
-    LookaheadReach,
     NormalizedEvent,
 )
 from .lookahead import analyze_blast_radius
@@ -45,12 +43,12 @@ def build_attack_graph(events: list[NormalizedEvent]) -> nx.DiGraph:
             host,
             node_type="host",
             label=host,
-            is_internal=host.startswith("10.") or host.startswith("172.16.") or host.startswith("192.168."),
+            is_internal=host.startswith(("10.", "172.16.", "192.168.")),
             is_compromised=True,
         )
 
         if target:
-            is_internal_target = target.startswith("10.") or target.startswith("172.16.") or target.startswith("192.168.")
+            is_internal_target = target.startswith(("10.", "172.16.", "192.168."))
             node_type = "internal_host" if is_internal_target else "external_c2"
 
             if target not in G.nodes:
@@ -69,16 +67,28 @@ def build_attack_graph(events: list[NormalizedEvent]) -> nx.DiGraph:
                 category=evt.category.value if hasattr(evt.category, "value") else str(evt.category),
             )
 
+            # Clean formatted timestamp & detail description
+            ts_clean = evt.timestamp.strftime("%b %d, %Y - %H:%M:%S UTC")
+            ts_iso = evt.timestamp.isoformat()
+            detail_info = (
+                evt.command_line
+                or (f"DNS query for {evt.file_path}" if evt.file_path else "")
+                or (f"Outbound connection to {evt.remote_address}:{evt.remote_port}" if evt.remote_port else "")
+                or evt.summary
+                or f"Network flow: {host} -> {target}"
+            )
+
             # Add directed edge from host to target
             G.add_edge(
                 host,
                 target,
                 event_id=evt.event_id,
-                timestamp=evt.timestamp.isoformat(),
+                timestamp=ts_clean,
+                iso_timestamp=ts_iso,
                 technique_id=tid or "T1071",
                 technique_name=tname or "Network Communication",
                 stage=stage.value if hasattr(stage, "value") else str(stage),
-                command=evt.command_line or "",
+                detail=detail_info,
             )
 
     return G
@@ -130,16 +140,25 @@ def export_graph_to_vis_json(G: nx.DiGraph) -> dict[str, Any]:
         tname = attrs.get("technique_name", "")
         stage = attrs.get("stage", "Command and Control")
         ts = attrs.get("timestamp", "")
-        cmd = attrs.get("command", "")
+        ts_iso = attrs.get("iso_timestamp", "")
+        detail = attrs.get("detail", "")
+        eid = attrs.get("event_id", "")
 
         label = f"{tid}"
-        tooltip = f"Technique: {tid} ({tname})\nStage: {stage}\nTime: {ts}\nDetail: {cmd}"
+        tooltip = f"{tid} ({tname})\nTime: {ts}\nStage: {stage}"
 
         edges.append({
             "from": u,
             "to": v,
             "label": label,
             "title": tooltip,
+            "technique_id": tid,
+            "technique_name": tname,
+            "stage": stage,
+            "timestamp": ts,
+            "iso_timestamp": ts_iso,
+            "detail": detail,
+            "event_id": eid,
             "arrows": "to",
             "color": {"color": "#64748b", "highlight": "#38bdf8"},
             "font": {"color": "#94a3b8", "size": 11, "align": "top"},
