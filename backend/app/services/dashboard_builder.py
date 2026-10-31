@@ -115,14 +115,17 @@ def build_dashboard_html(
             elif not _is_priv_addr(e.remote_address) and _is_priv_addr(e.host):
                 dmz_targets.add(e.host)
 
-    # Add External Threat Campaign Root to tie all external attackers into a cohesive campaign
+    # Add External Threat Campaign Root (Zone 1)
     if external_ips:
         nodes_map["ext_threat_actor"] = {
             "id": "ext_threat_actor",
-            "label": "EXTERNAL ATTACK CAMPAIGN\nAdversary / Botnet Ingress",
-            "color": {"background": "#b91c1c", "border": "#991b1b"},
+            "label": "🌐 EXTERNAL ATTACK CAMPAIGN\nAdversary Ingress Fleet",
+            "color": {"background": "#991b1b", "border": "#dc2626"},
             "shape": "box",
             "level": 1,
+            "zone": "Zone 1: External Adversaries",
+            "desc": "Coordinated external threat campaign conducting distributed reconnaissance and web exploit sweeps.",
+            "status": "THREAT SOURCE",
             "font": {"color": "#ffffff", "face": "JetBrains Mono, monospace", "size": 13, "bold": True},
         }
 
@@ -132,81 +135,143 @@ def build_dashboard_html(
         nodes_map[ip] = {
             "id": ip,
             "label": lbl,
-            "color": {"background": "#ef4444", "border": "#dc2626"},
+            "color": {"background": "#ef4444", "border": "#b91c1c"},
             "shape": "box",
             "level": 2,
-            "font": {"color": "#ffffff", "face": "JetBrains Mono, monospace", "size": 12},
+            "zone": "Zone 1: External Adversaries",
+            "desc": f"Hostile external IP address ({ip}) observed actively launching probe and exploit packets.",
+            "status": "HOSTILE ORIGIN",
+            "font": {"color": "#ffffff", "face": "JetBrains Mono, monospace", "size": 11},
         }
         edges_list.append(
             {
                 "from": "ext_threat_actor",
                 "to": ip,
-                "label": "Campaign Ingress",
+                "label": "Botnet Ingress",
                 "arrows": "to",
                 "dashes": True,
                 "color": {"color": "#ef4444"},
-                "font": {"color": "#94a3b8", "size": 10},
+                "font": {"color": "#fca5a5", "size": 10},
             }
         )
 
+    # Perimeter Gateway (Zone 2)
+    nodes_map["firewall_perimeter"] = {
+        "id": "firewall_perimeter",
+        "label": "🛡️ FORTIGATE UTM GATEWAY\nPerimeter Inspection & IPS",
+        "color": {"background": "#d97706", "border": "#b45309"},
+        "shape": "box",
+        "level": 3,
+        "zone": "Zone 2: Perimeter Gateway",
+        "desc": "Edge security appliance performing deep packet inspection, threat correlation, and egress policy filtering.",
+        "status": "INSPECTED & FILTERED",
+        "font": {"color": "#ffffff", "face": "JetBrains Mono, monospace", "size": 12, "bold": True},
+    }
+
+    # Route external probes through the perimeter gateway
+    for ip in sorted(external_ips)[:15]:
+        edges_list.append(
+            {
+                "from": ip,
+                "to": "firewall_perimeter",
+                "label": "Exploit Wave (T1190)",
+                "arrows": "to",
+                "color": {"color": "#f59e0b"},
+                "font": {"color": "#fcd34d", "size": 10},
+            }
+        )
+
+    # Corporate LAN Subnet Anchor (Zone 3)
+    nodes_map["corp_lan"] = {
+        "id": "corp_lan",
+        "label": "🏢 CORPORATE LAN (10.10.0.0/24)\nMonitored Internal Segment",
+        "color": {"background": "#0284c7", "border": "#0369a1"},
+        "shape": "box",
+        "level": 4,
+        "zone": "Zone 3: Corporate Subnet",
+        "desc": "Internal enterprise subnet segment housing employee workstations and application servers.",
+        "status": "MONITORED ZONE",
+        "font": {"color": "#ffffff", "face": "JetBrains Mono, monospace", "size": 12, "bold": True},
+    }
+    edges_list.append(
+        {
+            "from": "firewall_perimeter",
+            "to": "corp_lan",
+            "label": "Targeted Subnet",
+            "arrows": "to",
+            "color": {"color": "#38bdf8"},
+            "font": {"color": "#7dd3fc", "size": 10},
+        }
+    )
+
+    # Internal Workstations (Zone 3)
     for h in sorted(internal_hosts)[:25]:
         is_crown_jewel = any(k in h.upper() for k in ["DC", "DB", "FILE", "SQL", "0.10", "0.20", "0.40"])
         if is_crown_jewel:
-            lbl = f"CRITICAL ASSET\n{h}"
-            clr = {"background": "#8b5cf6", "border": "#7c3aed"}
-            lvl = 5
-        elif h in dmz_targets:
-            lbl = f"DMZ INGRESS HOST\n{h}"
-            clr = {"background": "#f59e0b", "border": "#d97706"}
-            lvl = 3
-        else:
-            lbl = f"COMPROMISED HOST\n{h}"
-            clr = {"background": "#3b82f6", "border": "#2563eb"}
-            lvl = 4
-
+            continue
         nodes_map[h] = {
             "id": h,
-            "label": lbl,
-            "color": clr,
-            "shape": "box",
-            "level": lvl,
-            "font": {"color": "#ffffff", "face": "JetBrains Mono, monospace", "size": 12},
-        }
-
-    # Add Crown Jewels target group
-    if "dc_net" not in nodes_map:
-        nodes_map["dc_net"] = {
-            "id": "dc_net",
-            "label": "CRITICAL DOMAIN CONTROLLERS\n10.10.0.0/24 (Target Protected)",
-            "color": {"background": "#8b5cf6", "border": "#7c3aed"},
+            "label": f"💻 WORKSTATION\n{h}",
+            "color": {"background": "#2563eb", "border": "#1d4ed8"},
             "shape": "box",
             "level": 5,
-            "font": {"color": "#ffffff", "face": "JetBrains Mono, monospace", "size": 12, "bold": True},
+            "zone": "Zone 3: Corporate Subnet",
+            "desc": f"Corporate internal endpoint ({h}). Targeted in telemetry; traffic was correlated by security gateway.",
+            "status": "CONTAINED / BLOCKED",
+            "font": {"color": "#ffffff", "face": "JetBrains Mono, monospace", "size": 11},
         }
+        # Connect to corp_lan anchor - GUARANTEES ZERO FLOATING NODES!
+        edges_list.append(
+            {
+                "from": "corp_lan",
+                "to": h,
+                "label": "Internal Host",
+                "arrows": "to",
+                "dashes": True,
+                "color": {"color": "#60a5fa"},
+                "font": {"color": "#93c5fd", "size": 9},
+            }
+        )
 
-    # Connect candidate events
+    # Zone 4: Crown Jewels & Core Infrastructure
+    nodes_map["dc_net"] = {
+        "id": "dc_net",
+        "label": "🏆 CRITICAL CROWN JEWELS\nActive Directory & DB (10.10.0.0/24)",
+        "color": {"background": "#7c3aed", "border": "#6d28d9"},
+        "shape": "box",
+        "level": 6,
+        "zone": "Zone 4: Protected Core Assets",
+        "desc": "Primary enterprise domain controller and mission-critical database. Confirmed unbreached; within adjacent blast radius.",
+        "status": "PROTECTED / ISOLATED",
+        "font": {"color": "#ffffff", "face": "JetBrains Mono, monospace", "size": 12, "bold": True},
+    }
+
+    # Direct telemetry edges between attacker and target endpoints
     for e in candidate_events:
         if not (e.remote_address and e.host):
             continue
+        src_raw, dst_raw = e.host, e.remote_address
         m_id = e.mitre_ids[0] if e.mitre_ids else "TRAFFIC"
 
-        host_priv = _is_priv_addr(e.host)
-        rem_priv = _is_priv_addr(e.remote_address)
-
-        if not host_priv and rem_priv:
-            src, dst = e.host, e.remote_address
+        if not _is_priv_addr(src_raw) and _is_priv_addr(dst_raw):
+            src, dst = src_raw, dst_raw
             edge_lbl = f"{m_id} Ingress"
             edge_clr = "#ef4444"
-        elif host_priv and not rem_priv:
-            src, dst = e.host, e.remote_address
-            edge_lbl = f"{m_id} Beacon" if "T1071" in m_id else f"{m_id} Outbound"
-            edge_clr = "#ef4444" if "T1071" in m_id else "#38bdf8"
+        elif _is_priv_addr(src_raw) and not _is_priv_addr(dst_raw):
+            if "T1071" in m_id:
+                src, dst = src_raw, dst_raw
+                edge_lbl = "T1071 C2 Beacon"
+                edge_clr = "#f43f5e"
+            else:
+                src, dst = dst_raw, src_raw
+                edge_lbl = f"{m_id} Ingress Probe"
+                edge_clr = "#ef4444"
         else:
-            src, dst = e.host, e.remote_address
+            src, dst = src_raw, dst_raw
             edge_lbl = f"{m_id} Lateral"
             edge_clr = "#f59e0b"
 
-        edge_key = (src, dst, m_id)
+        edge_key = (src, dst, edge_lbl)
         if edge_key not in seen_edges and src in nodes_map and dst in nodes_map:
             seen_edges.add(edge_key)
             edges_list.append(
@@ -216,23 +281,24 @@ def build_dashboard_html(
                     "label": edge_lbl,
                     "arrows": "to",
                     "color": {"color": edge_clr},
-                    "font": {"color": "#cfd8dc", "size": 11, "align": "middle"},
+                    "font": {"color": "#cbd5e1", "size": 10, "align": "middle"},
                 }
             )
 
-    # Connect blast radius reachability to critical assets
+    # Blast radius reachability from workstations to Crown Jewels
     for ch in sorted(internal_hosts)[:3]:
-        edges_list.append(
-            {
-                "from": ch,
-                "to": "dc_net",
-                "label": "Reachable Hop (Blast Radius)",
-                "arrows": "to",
-                "dashes": True,
-                "color": {"color": "#8b5cf6"},
-                "font": {"color": "#c4b5fd", "size": 10},
-            }
-        )
+        if ch in nodes_map:
+            edges_list.append(
+                {
+                    "from": ch,
+                    "to": "dc_net",
+                    "label": "Blast Radius (Protected)",
+                    "arrows": "to",
+                    "dashes": True,
+                    "color": {"color": "#a855f7"},
+                    "font": {"color": "#d8b4fe", "size": 9},
+                }
+            )
 
     compromised_hosts = sorted(internal_hosts)
 
@@ -522,17 +588,46 @@ def build_dashboard_html(
 
   <!-- Section 3: Interactive Visual Attack Graph -->
   <div class="section-card">
-    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
-      <span>Interactive Attack Campaign Graph (NetworkX / Vis.js Canvas)</span>
-      <div style="display: flex; gap: 10px; align-items: center;">
-        <button onclick="toggleNetworkLayout()" style="background: #1e293b; border: 1px solid var(--card-border); color: #38bdf8; padding: 4px 10px; border-radius: 4px; font-size: 11px; cursor: pointer; font-family: 'JetBrains Mono', monospace;">
-          Toggle Hierarchical / Force Layout
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+      <div>
+        <span style="font-weight: 700;">Executive Attack Campaign Flow (Left-to-Right Incident Storyline)</span>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+          Zone 1: Adversary Ingress &rarr; Zone 2: Gateway Inspection &rarr; Zone 3: Corporate Subnet Endpoints &rarr; Zone 4: Protected Crown Jewels
+        </div>
+      </div>
+      <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+        <button onclick="focusAllNodes()" style="background: #1e293b; border: 1px solid var(--card-border); color: #94a3b8; padding: 5px 12px; border-radius: 4px; font-size: 11px; cursor: pointer;">
+          Reset View
         </button>
-        <span style="font-size: 12px; color: var(--text-muted);">Scroll to Zoom | Drag to Pan</span>
+        <button onclick="toggleNetworkLayout()" id="layout-toggle-btn" style="background: #1e293b; border: 1px solid var(--card-border); color: #38bdf8; padding: 5px 12px; border-radius: 4px; font-size: 11px; cursor: pointer; font-family: 'JetBrains Mono', monospace;">
+          Switch to Force-Directed Layout
+        </button>
       </div>
     </div>
-    <div class="card-body">
-      <div id="attack-network"></div>
+
+    <!-- Zone Legend Bar -->
+    <div style="display: flex; gap: 16px; padding: 10px 20px; background: rgba(15, 23, 42, 0.5); border-bottom: 1px solid var(--card-border); font-size: 12px; flex-wrap: wrap; align-items: center;">
+      <span style="font-weight: 600; color: #94a3b8;">Campaign Zones:</span>
+      <span style="display: flex; align-items: center; gap: 6px;"><span style="width: 10px; height: 10px; border-radius: 2px; background: #ef4444; display: inline-block;"></span> Zone 1: Adversaries (Red)</span>
+      <span style="display: flex; align-items: center; gap: 6px;"><span style="width: 10px; height: 10px; border-radius: 2px; background: #f59e0b; display: inline-block;"></span> Zone 2: Firewall Gateways (Amber)</span>
+      <span style="display: flex; align-items: center; gap: 6px;"><span style="width: 10px; height: 10px; border-radius: 2px; background: #3b82f6; display: inline-block;"></span> Zone 3: Corporate LAN (Blue)</span>
+      <span style="display: flex; align-items: center; gap: 6px;"><span style="width: 10px; height: 10px; border-radius: 2px; background: #8b5cf6; display: inline-block;"></span> Zone 4: Core Assets (Purple)</span>
+      <span style="margin-left: auto; color: var(--text-muted); font-size: 11px;">💡 Click any node to illuminate its attack path</span>
+    </div>
+
+    <div class="card-body" style="position: relative; padding: 0;">
+      <div id="attack-network" style="height: 520px; width: 100%;"></div>
+
+      <!-- Floating HUD Inspector Card -->
+      <div id="graph-inspector" style="position: absolute; top: 16px; right: 16px; background: rgba(15, 23, 42, 0.95); border: 1px solid #38bdf8; border-radius: 8px; padding: 16px; width: 310px; z-index: 10; display: none; backdrop-filter: blur(10px); box-shadow: 0 12px 30px rgba(0,0,0,0.6);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <span id="insp-zone" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #38bdf8; font-weight: 700;">ZONE 3: CORPORATE WORKSTATION</span>
+          <button onclick="resetNodeHighlight()" style="background: none; border: none; color: #94a3b8; font-size: 16px; cursor: pointer; line-height: 1;">&times;</button>
+        </div>
+        <div id="insp-title" style="font-size: 14px; font-weight: 700; color: #ffffff; margin-bottom: 6px; font-family: 'JetBrains Mono', monospace;">10.10.20.38</div>
+        <div id="insp-desc" style="font-size: 12px; color: #cbd5e1; line-height: 1.5; margin-bottom: 10px;">Corporate internal endpoint. Observed in forensic telemetry; connection was analyzed by security gateway.</div>
+        <div id="insp-action" style="font-size: 11px; padding: 4px 8px; border-radius: 4px; font-weight: 600; display: inline-block; background: rgba(16, 185, 129, 0.2); color: #10b981; border: 1px solid #10b981;">STATUS: CONTAINED / BLOCKED</div>
+      </div>
     </div>
   </div>
 
@@ -595,20 +690,27 @@ def build_dashboard_html(
     const rawEdges = {edges_json};
 
     const container = document.getElementById('attack-network');
-    const data = {{
-      nodes: new vis.DataSet(rawNodes),
-      edges: new vis.DataSet(rawEdges)
-    }};
+    const nodesDataSet = new vis.DataSet(rawNodes);
+    const edgesDataSet = new vis.DataSet(rawEdges);
+    const data = {{ nodes: nodesDataSet, edges: edgesDataSet }};
 
-    const defaultOptions = {{
+    const hierarchicalOptions = {{
+      layout: {{
+        hierarchical: {{
+          enabled: true,
+          direction: "LR",
+          sortMethod: "directed",
+          nodeSpacing: 140,
+          levelSeparation: 240,
+          treeSpacing: 180
+        }}
+      }},
       physics: {{
-        barnesHut: {{
-          gravitationalConstant: -3500,
-          centralGravity: 0.25,
-          springLength: 130,
-          springConstant: 0.04
-        }},
-        stabilization: {{ iterations: 120 }}
+        hierarchicalRepulsion: {{
+          nodeDistance: 140,
+          springLength: 100,
+          springConstant: 0.05
+        }}
       }},
       interaction: {{
         hover: true,
@@ -618,38 +720,109 @@ def build_dashboard_html(
       }}
     }};
 
-    const network = new vis.Network(container, data, defaultOptions);
-
-    let isHierarchical = false;
-    function toggleNetworkLayout() {{
-      isHierarchical = !isHierarchical;
-      if (isHierarchical) {{
-        network.setOptions({{
-          layout: {{
-            hierarchical: {{
-              enabled: true,
-              direction: "UD",
-              sortMethod: "directed",
-              nodeSpacing: 180,
-              levelSeparation: 120
-            }}
-          }},
-          physics: {{ enabled: false }}
-        }});
-      }} else {{
-        network.setOptions({{
-          layout: {{ hierarchical: {{ enabled: false }} }},
-          physics: {{
-            barnesHut: {{
-              gravitationalConstant: -3500,
-              centralGravity: 0.25,
-              springLength: 130,
-              springConstant: 0.04
-            }},
-            enabled: true
-          }}
-        }});
+    const forceOptions = {{
+      layout: {{ hierarchical: {{ enabled: false }} }},
+      physics: {{
+        barnesHut: {{
+          gravitationalConstant: -4000,
+          centralGravity: 0.3,
+          springLength: 140,
+          springConstant: 0.04
+        }},
+        enabled: true
+      }},
+      interaction: {{
+        hover: true,
+        tooltipDelay: 100,
+        navigationButtons: true,
+        keyboard: true
       }}
+    }};
+
+    const network = new vis.Network(container, data, hierarchicalOptions);
+
+    // Interactive Node Selection & Inspector
+    network.on("selectNode", function(params) {{
+      if (!params.nodes || params.nodes.length === 0) return;
+      const selectedId = params.nodes[0];
+      const nodeData = nodesDataSet.get(selectedId);
+      if (!nodeData) return;
+
+      const inspector = document.getElementById("graph-inspector");
+      document.getElementById("insp-zone").innerText = nodeData.zone || "ATTACK CAMPAIGN ENTITY";
+      document.getElementById("insp-title").innerText = (nodeData.label || "").replace(/\\n/g, " - ");
+      document.getElementById("insp-desc").innerText = nodeData.desc || "Forensic telemetry entity involved in the attack campaign.";
+      const statusBadge = document.getElementById("insp-action");
+      statusBadge.innerText = "STATUS: " + (nodeData.status || "OBSERVED");
+      if ((nodeData.status || "").includes("THREAT") || (nodeData.status || "").includes("HOSTILE")) {{
+        statusBadge.style.background = "rgba(239, 68, 68, 0.2)";
+        statusBadge.style.color = "#ef4444";
+        statusBadge.style.borderColor = "#ef4444";
+      }} else if ((nodeData.status || "").includes("PROTECTED")) {{
+        statusBadge.style.background = "rgba(139, 92, 246, 0.2)";
+        statusBadge.style.color = "#8b5cf6";
+        statusBadge.style.borderColor = "#8b5cf6";
+      }} else {{
+        statusBadge.style.background = "rgba(16, 185, 129, 0.2)";
+        statusBadge.style.color = "#10b981";
+        statusBadge.style.borderColor = "#10b981";
+      }}
+      inspector.style.display = "block";
+
+      // Highlight active attack path
+      const connectedNodeIds = new Set(network.getConnectedNodes(selectedId));
+      connectedNodeIds.add(selectedId);
+
+      const updatedNodes = rawNodes.map(n => {{
+        const isConn = connectedNodeIds.has(n.id);
+        return Object.assign({{}}, n, {{
+          opacity: isConn ? 1.0 : 0.15
+        }});
+      }});
+      nodesDataSet.update(updatedNodes);
+
+      const connectedEdgeIds = new Set(network.getConnectedEdges(selectedId));
+      const updatedEdges = rawEdges.map((e, idx) => {{
+        const eId = e.id !== undefined ? e.id : idx;
+        const isConn = connectedEdgeIds.has(eId) || (connectedNodeIds.has(e.from) && connectedNodeIds.has(e.to));
+        return Object.assign({{}}, e, {{
+          color: {{ color: isConn ? "#38bdf8" : "rgba(100, 116, 139, 0.12)" }},
+          width: isConn ? 2.5 : 1
+        }});
+      }});
+      edgesDataSet.update(updatedEdges);
+    }});
+
+    network.on("deselectNode", function() {{
+      resetNodeHighlight();
+    }});
+
+    function resetNodeHighlight() {{
+      nodesDataSet.update(rawNodes);
+      edgesDataSet.update(rawEdges);
+      document.getElementById("graph-inspector").style.display = "none";
+    }}
+
+    function focusAllNodes() {{
+      resetNodeHighlight();
+      network.fit({{ animation: {{ duration: 600, easingFunction: "easeInOutQuad" }} }});
+    }}
+
+    let currentLayout = "LR";
+    function toggleNetworkLayout() {{
+      const btn = document.getElementById("layout-toggle-btn");
+      if (currentLayout === "LR") {{
+        network.setOptions(forceOptions);
+        currentLayout = "FORCE";
+        btn.innerText = "Switch to Left-to-Right Story Flow";
+        btn.style.color = "#f59e0b";
+      }} else {{
+        network.setOptions(hierarchicalOptions);
+        currentLayout = "LR";
+        btn.innerText = "Switch to Force-Directed Layout";
+        btn.style.color = "#38bdf8";
+      }}
+      network.fit();
     }}
   </script>
 
