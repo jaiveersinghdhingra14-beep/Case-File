@@ -15,7 +15,9 @@ CaseFile v2 enforces strict engineering controls:
 
 from __future__ import annotations
 
+import concurrent.futures
 import hashlib
+import sys
 from collections.abc import Sequence
 
 from ..config import settings
@@ -488,71 +490,89 @@ def write_story_for_events(
     sorted_events = sorted(events, key=lambda e: e.timestamp)
     chunks = [sorted_events[i : i + chunk_size] for i in range(0, len(sorted_events), chunk_size)]
 
-    for c_idx, chunk in enumerate(chunks[:max_llm_calls], start=1):
+    def _process_chunk_worker(
+        item: tuple[int, list[NormalizedEvent]],
+    ) -> tuple[int, StoryDraftOutput, int, int, bool]:
+        c_idx, chunk = item
         chunk_hash = _compute_chunk_hash(chunk)
 
         # Check content-hash cache
         if chunk_hash in _LLM_CACHE:
-            draft = _LLM_CACHE[chunk_hash]
-        else:
-            usage.llm_calls += 1
+            return c_idx, _LLM_CACHE[chunk_hash], 0, 0, True
 
-            if use_groq:
-                try:
-                    target_model = model_name or settings.GROQ_MODEL
-                    print(
-                        f"  [LLM] Invoking Groq ({target_model}, {len(chunk)} events in chunk) with DFIR Analyst persona..."
-                    )
-                    draft, in_tok, out_tok = generate_groq_story_draft(
-                        chunk,
-                        api_key=groq_key,
-                        model_name=target_model,
-                        patterns=patterns,
-                    )
-                    usage.input_tokens += in_tok
-                    usage.output_tokens += out_tok
-                    print(
-                        f"  [LLM] Groq response received ({len(draft.steps)} story steps, {in_tok} in / {out_tok} out tokens)."
-                    )
-                except Exception as e:  # noqa: BLE001
-                    import sys
-
-                    print(f"[WARN] Groq call failed ({e}); falling back to offline generator.", file=sys.stderr)
-                    draft = generate_mock_story_draft(chunk, patterns=patterns)
-                    usage.input_tokens += len(chunk) * 45
-                    usage.output_tokens += 120
-            elif use_gemini:
-                try:
-                    target_model = model_name or settings.LLM_MODEL
-                    print(
-                        f"  [LLM] Invoking Gemini ({target_model}, {len(chunk)} events in chunk) with DFIR Analyst persona..."
-                    )
-                    draft, in_tok, out_tok = generate_gemini_story_draft(
-                        chunk,
-                        api_key=gemini_key,
-                        model_name=target_model,
-                        patterns=patterns,
-                    )
-                    usage.input_tokens += in_tok
-                    usage.output_tokens += out_tok
-                    print(
-                        f"  [LLM] Gemini response received ({len(draft.steps)} story steps, {in_tok} in / {out_tok} out tokens)."
-                    )
-                except Exception as e:  # noqa: BLE001
-                    import sys
-
-                    print(f"[WARN] Gemini call failed ({e}); falling back to offline generator.", file=sys.stderr)
-                    draft = generate_mock_story_draft(chunk, patterns=patterns)
-                    usage.input_tokens += len(chunk) * 45
-                    usage.output_tokens += 120
-            else:
+        target_model = model_name or (settings.GROQ_MODEL if use_groq else settings.LLM_MODEL)
+        if use_groq:
+            try:
+                print(f"  [LLM Worker {c_idx}] Invoking Groq ({target_model}, {len(chunk)} events in chunk)...")
+                draft, in_tok, out_tok = generate_groq_story_draft(
+                    chunk,
+                    api_key=groq_key,
+                    model_name=target_model,
+                    patterns=patterns,
+                )
+                print(
+                    f"  [LLM Worker {c_idx}] Groq response received ({len(draft.steps)} steps, {in_tok} in / {out_tok} out tokens)."
+                )
+                _LLM_CACHE[chunk_hash] = draft
+                return c_idx, draft, in_tok, out_tok, False
+            except Exception as e:  # noqa: BLE001
+                print(
+                    f"[WARN Worker {c_idx}] Groq call failed ({e}); falling back to offline generator.", file=sys.stderr
+                )
                 draft = generate_mock_story_draft(chunk, patterns=patterns)
-                usage.input_tokens += len(chunk) * 45
-                usage.output_tokens += 120
-
-            # Store in cache
+                _LLM_CACHE[chunk_hash] = draft
+                return c_idx, draft, len(chunk) * 45, 120, False
+        elif use_gemini:
+            try:
+                print(f"  [LLM Worker {c_idx}] Invoking Gemini ({target_model}, {len(chunk)} events in chunk)...")
+                draft, in_tok, out_tok = generate_gemini_story_draft(
+                    chunk,
+                    api_key=gemini_key,
+                    model_name=target_model,
+                    patterns=patterns,
+                )
+                print(
+                    f"  [LLM Worker {c_idx}] Gemini response received ({len(draft.steps)} steps, {in_tok} in / {out_tok} out tokens)."
+                )
+                _LLM_CACHE[chunk_hash] = draft
+                return c_idx, draft, in_tok, out_tok, False
+            except Exception as e:  # noqa: BLE001
+                print(
+                    f"[WARN Worker {c_idx}] Gemini call failed ({e}); falling back to offline generator.",
+                    file=sys.stderr,
+                )
+                draft = generate_mock_story_draft(chunk, patterns=patterns)
+                _LLM_CACHE[chunk_hash] = draft
+                return c_idx, draft, len(chunk) * 45, 120, False
+        else:
+            draft = generate_mock_story_draft(chunk, patterns=patterns)
             _LLM_CACHE[chunk_hash] = draft
+            return c_idx, draft, len(chunk) * 45, 120, False
 
+    indexed_chunks = list(enumerate(chunks[:max_llm_calls], start=1))
+    max_workers = min(len(indexed_chunks), 4)
+
+    chunk_results: list[tuple[int, StoryDraftOutput, int, int, bool]] = []
+    if max_workers > 1 and (use_groq or use_gemini):
+        print(
+            f"  [LLM Pipeline] Firing {len(indexed_chunks)} story chunks concurrently across {max_workers} parallel workers..."
+        )
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = [pool.submit(_process_chunk_worker, item) for item in indexed_chunks]
+            for f in concurrent.futures.as_completed(futures):
+                chunk_results.append(f.result())
+    else:
+        for item in indexed_chunks:
+            chunk_results.append(_process_chunk_worker(item))
+
+    # Sort results by original chunk index to maintain exact chronological event order
+    chunk_results.sort(key=lambda x: x[0])
+
+    for _, draft, in_tok, out_tok, is_cache_hit in chunk_results:
+        if not is_cache_hit:
+            usage.llm_calls += 1
+            usage.input_tokens += in_tok
+            usage.output_tokens += out_tok
         all_steps.extend(draft.steps)
         if draft.summary and draft.summary not in chunk_summaries:
             chunk_summaries.append(draft.summary)
