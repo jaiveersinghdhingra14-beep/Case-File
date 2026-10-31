@@ -312,21 +312,7 @@
       if (stageEl) stageEl.innerText = 'Connecting...';
       if (msgEl) msgEl.innerText = 'Uploading telemetry payload to CaseFile engine...';
 
-      if (pollInterval) clearInterval(pollInterval);
-      pollInterval = setInterval(async () => {
-        try {
-          const res = await fetch('/api/v1/pipeline/status');
-          if (res.ok) {
-            const st = await res.json();
-            if (st.stage && stageEl) stageEl.innerText = st.stage;
-            if (st.percent && barEl && pctEl) {
-              barEl.style.width = st.percent + '%';
-              pctEl.innerText = st.percent + '%';
-            }
-            if (st.message && msgEl) msgEl.innerText = st.message;
-          }
-        } catch (_) {}
-      }, 1000);
+      if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
 
       try {
         let finalTarget = targetVal;
@@ -346,8 +332,8 @@
           finalTarget = upData.path;
         }
 
-        // Run DFIR Incident Reconstruction
-        if (msgEl) msgEl.innerText = 'Starting incident reconstruction...';
+        // Launch DFIR Pipeline (returns immediately — runs in background thread)
+        if (msgEl) msgEl.innerText = 'Launching incident reconstruction pipeline...';
         const response = await fetch('/api/v1/pipeline/run', {
           method: 'POST',
           headers: {
@@ -360,35 +346,58 @@
           }),
         });
 
-        if (pollInterval) clearInterval(pollInterval);
-
         if (!response.ok) {
           const errData = await response.json().catch(() => ({ detail: 'Unknown error occurred.' }));
-          throw new Error(errData.detail || 'Pipeline execution failed.');
+          throw new Error(errData.detail || 'Pipeline launch failed.');
         }
 
-        const data = await response.json();
-        if (barEl) barEl.style.width = '100%';
-        if (pctEl) pctEl.innerText = '100%';
-        if (stageEl) stageEl.innerText = 'Reconstruction Complete!';
-        if (msgEl) {
-          const hostsCount = data.compromised_hosts ? data.compromised_hosts.length : 0;
-          msgEl.innerText = 'Identified ' + data.steps_count + ' verified attack steps across ' + hostsCount + ' host(s). Updating dashboard...';
+        const launchData = await response.json();
+        if (!launchData.success) {
+          throw new Error(launchData.message || 'Pipeline could not start.');
         }
 
-        setTimeout(() => {
-          if (data.html) {
-            window.history.pushState({}, '', '/dashboard');
-            document.open();
-            document.write(data.html);
-            document.close();
-          } else {
-            window.location.href = '/dashboard';
-          }
-        }, 1200);
+        // Pipeline is running in background — poll status until complete or failed
+        if (pollInterval) clearInterval(pollInterval);
+        pollInterval = setInterval(async () => {
+          try {
+            const res = await fetch('/api/v1/pipeline/status');
+            if (res.ok) {
+              const st = await res.json();
+              if (st.stage && stageEl) stageEl.innerText = st.stage;
+              if (st.percent != null && barEl && pctEl) {
+                barEl.style.width = st.percent + '%';
+                pctEl.innerText = st.percent + '%';
+              }
+              if (st.message && msgEl) msgEl.innerText = st.message;
+
+              // Pipeline complete — redirect to dashboard
+              if (st.status === 'complete') {
+                clearInterval(pollInterval);
+                pollInterval = null;
+                if (barEl) barEl.style.width = '100%';
+                if (pctEl) pctEl.innerText = '100%';
+                if (stageEl) stageEl.innerText = 'Reconstruction Complete!';
+                if (msgEl) msgEl.innerText = st.message + ' Redirecting to dashboard...';
+                setTimeout(() => {
+                  window.location.href = '/dashboard';
+                }, 1200);
+              }
+
+              // Pipeline failed
+              if (st.status === 'failed') {
+                clearInterval(pollInterval);
+                pollInterval = null;
+                if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+                if (stageEl) { stageEl.innerText = 'Pipeline Error'; stageEl.style.color = 'var(--accent-red)'; }
+                if (msgEl) { msgEl.innerText = st.message; msgEl.style.color = 'var(--accent-red)'; }
+                if (barEl) barEl.style.background = 'var(--accent-red)';
+              }
+            }
+          } catch (_) {}
+        }, 1000);
 
       } catch (err) {
-        if (pollInterval) clearInterval(pollInterval);
+        if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
         if (btn) {
           btn.disabled = false;
           btn.style.opacity = '1';

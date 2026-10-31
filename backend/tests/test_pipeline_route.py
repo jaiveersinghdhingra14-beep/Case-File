@@ -1,9 +1,12 @@
+import time
 from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
 
 from backend.app.api.routes.pipeline import (
+    _PIPELINE_LOCK,
+    _PIPELINE_STATUS,
     PipelineRunRequest,
     get_pipeline_status,
     run_pipeline_endpoint,
@@ -28,8 +31,19 @@ def setup_test_env(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "BASE_DIR", tmp_path)
 
     db.init_db()
+
+    # Reset pipeline status between tests
+    _PIPELINE_STATUS["status"] = "idle"
+    _PIPELINE_STATUS["percent"] = 0
+    # Ensure lock is released between tests
+    if _PIPELINE_LOCK.locked():
+        _PIPELINE_LOCK.release()
+
     yield
     db.clear_all(keep_datasets=False)
+    # Clean up lock after test
+    if _PIPELINE_LOCK.locked():
+        _PIPELINE_LOCK.release()
 
 
 def test_pipeline_status_endpoint():
@@ -55,6 +69,7 @@ def test_pipeline_run_target_not_found():
 
 
 def test_pipeline_run_with_file_upload():
+    """Pipeline now runs in background — verify it launches and completes."""
     fixture_path = Path(__file__).parent / "fixtures" / "sample_fortigate.log"
     assert fixture_path.exists()
 
@@ -68,16 +83,19 @@ def test_pipeline_run_with_file_upload():
         )
     )
 
+    # Pipeline returns immediately with "started" status
     assert res_data["success"] is True
+    assert res_data["status"] == "started"
     assert res_data["dataset_id"].startswith("ds_")
-    assert res_data["case_id"].startswith("case_")
-    assert res_data["story_id"].startswith("story_")
-    assert "html" in res_data
-    assert "CaseFile v2" in res_data["html"]
-    assert "Live Telemetry Ingestion" in res_data["html"]
-    assert res_data["dashboard_url"] == "/dashboard"
 
-    # Verify status after run is complete
+    # Wait for background thread to complete (small test fixture should finish quickly)
+    deadline = time.time() + 30
+    while time.time() < deadline:
+        st = get_pipeline_status()
+        if st["status"] in ("complete", "failed"):
+            break
+        time.sleep(0.2)
+
     st = get_pipeline_status()
-    assert st["status"] == "complete"
+    assert st["status"] == "complete", f"Pipeline did not complete: {st}"
     assert st["percent"] == 100

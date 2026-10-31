@@ -4,11 +4,18 @@ Interactive Web Ingestion & Real-Time Incident Reconstruction Route.
 Provides:
 - POST /api/v1/pipeline/run: Upload log file OR provide local path / dataset ID to trigger complete 5-stage DFIR pipeline.
 - GET /api/v1/pipeline/status: Poll live progress during ingestion & reconstruction.
+
+ARCHITECTURE:
+The pipeline runs in a background thread so the HTTP request returns immediately.
+The frontend polls GET /pipeline/status every 1 second for real-time progress.
+When status reaches "complete", the frontend fetches /dashboard.
 """
 
 from __future__ import annotations
 
+import threading
 import time
+import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -52,6 +59,9 @@ _PIPELINE_STATUS: dict[str, Any] = {
     "story_id": "",
     "updated_at": datetime.now(timezone.utc).isoformat(),
 }
+
+# Lock to prevent multiple concurrent pipeline runs
+_PIPELINE_LOCK = threading.Lock()
 
 
 def _update_status(status_str: str, stage: str, percent: int, message: str, **kwargs: Any) -> None:
@@ -117,12 +127,205 @@ async def upload_log_file(request: Request, filename: str) -> dict[str, Any]:
     return {"success": True, "filename": clean_fname, "path": str(dest_path.resolve())}
 
 
+def _run_pipeline_in_background(
+    target_file: Path,
+    dataset_id: str,
+    top_k: int,
+    chunk_size: int,
+    workers: int | None,
+    is_existing_dataset: bool,
+) -> None:
+    """Execute the full DFIR pipeline in a background thread."""
+    try:
+        db.init_db()
+
+        # 2. Ingestion (if new file or not already ingested into parquet)
+        if not is_existing_dataset:
+            _update_status("running", "Profiling", 15, f"Profiling log format for {target_file.name}...")
+            meta = profile_file(str(target_file))
+            dataset_id_val = dataset_id
+            fmt_name = meta.format_name.upper()
+
+            file_size_bytes = target_file.stat().st_size
+            file_size_mb = file_size_bytes / (1024 * 1024)
+
+            dataset = Dataset(
+                dataset_id=dataset_id_val,
+                name=target_file.name,
+                path=str(target_file.resolve()),
+                size_bytes=file_size_bytes,
+                format=fmt_name,
+                status=DatasetStatus.registered,
+                events_total=0,
+                hosts=[],
+                created_at=datetime.now(timezone.utc),
+            )
+            db.save_dataset(dataset)
+
+            num_workers = workers or 4
+
+            # Progress callback: updates status during ingestion with real progress
+            def _ingestion_progress(rows_in: int, rows_out: int) -> None:
+                # Scale ingestion progress from 20% to 35% of overall pipeline
+                # Estimate based on file size processed vs total
+                _update_status(
+                    "running",
+                    "Streaming Ingestion",
+                    28,
+                    f"Ingesting {target_file.name} — {rows_in:,} lines read, "
+                    f"{rows_out:,} events parsed ({file_size_mb:.0f} MB file)...",
+                )
+
+            _update_status(
+                "running",
+                "Streaming Ingestion",
+                20,
+                f"Streaming {target_file.name} ({file_size_mb:.0f} MB) into columnar Parquet...",
+            )
+            report = ingest_dataset_sync(
+                dataset_id=dataset_id_val,
+                batch_size=10000,
+                num_workers=num_workers,
+                progress_callback=_ingestion_progress,
+            )
+            _update_status(
+                "running",
+                "Ingestion Complete",
+                35,
+                f"Ingested {getattr(report, 'rows_out', 0):,} events into Parquet.",
+                dataset_id=dataset_id_val,
+            )
+        else:
+            dataset_id_val = dataset_id
+
+        ds = db.get_dataset(dataset_id_val)
+        if not ds:
+            _update_status("failed", "Error", 0, f"Dataset {dataset_id_val} not found after ingestion.")
+            return
+
+        # 3. Case Creation
+        case_id = f"case_{abs(hash((dataset_id_val, time.time()))) % 100000000:08x}"
+        case = Case(
+            case_id=case_id,
+            dataset_id=dataset_id_val,
+            name=f"Incident Analysis: {ds.name}",
+            status=CaseStatus.correlating,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        db.save_case(case)
+        _update_status("running", "Pattern Detection", 45, "Detecting high-velocity attack patterns...", case_id=case_id)
+
+        # 4. Pattern Detection
+        patterns = detect_attack_patterns(dataset_id=dataset_id_val)
+
+        # 5. Noise Reduction & 2-Hop Graph Expansion
+        _update_status("running", "Noise Reduction", 55, f"Mining Top-{top_k} seeds & expanding 2-hop neighborhood...")
+        seeds = get_top_k_seeds(dataset_id_val, top_k=top_k, min_rarity_score=0.1)
+        expanded = expand_neighborhood(dataset_id_val, seeds, window_seconds=120, max_expanded_events=2000)
+
+        # 6. Raw Data Post-Processing & Adversarial Anti-Evasion
+        _update_status("running", "Anti-Evasion Shield", 68, "Raw Data Post-Processing: unmasking Base64, carat & delimiters...")
+        expanded, _evasion_metrics = raw_data_post_process(expanded)
+        stealth_patterns = detect_low_and_slow_jitter(expanded)
+        if stealth_patterns:
+            patterns.extend(stealth_patterns)
+
+        events_by_id = {e.event_id: e for e in expanded}
+        incidents = correlate_incident_paths(dataset_id_val, expanded, all_known_hosts=ds.hosts)
+
+        comp_hosts = sorted({e.host for e in expanded})
+        sources = sorted({e.source for e in expanded})
+        noise_pruned = max(0, ds.events_total - len(expanded))
+
+        case.stats = CaseStats(
+            events_ingested=ds.events_total,
+            events_after_noise_filter=len(expanded),
+            noise_removed=noise_pruned,
+            groups=len(incidents),
+            hosts=comp_hosts[:25],
+            sources=sources,
+        )
+        case.status = CaseStatus.ready
+        case.updated_at = datetime.now(timezone.utc)
+        db.save_case(case)
+
+        # 7. AI Story Synthesis via Groq & 4-Check Verification Gate
+        _update_status("running", "AI Story Synthesis", 80, f"Synthesizing threat narrative via {settings.GROQ_MODEL}...")
+        draft, usage = write_story_for_events(
+            expanded,
+            chunk_size=chunk_size,
+            model_name=settings.GROQ_MODEL,
+            patterns=patterns,
+            provider=settings.LLM_PROVIDER,
+        )
+        verified_steps, unsupported = verify_all_steps(draft.steps, events_by_id)
+
+        now = datetime.now(timezone.utc)
+        story_id = f"story_{abs(hash(case_id)) % 100000000:08x}"
+        story = Story(
+            story_id=story_id,
+            case_id=case_id,
+            status=StoryStatus.awaiting_review,
+            created_at=now,
+            updated_at=now,
+            method=Method.casefile,
+            summary=draft.summary,
+            steps=verified_steps,
+            unsupported_claims=unsupported,
+            model_name=f"{settings.GROQ_MODEL} (SOC Analyst AI)",
+            usage=usage,
+        )
+        db.save_story(story)
+
+        # 8. Compile Unified Dashboard HTML
+        _update_status("running", "Compiling Dashboard", 95, "Compiling interactive attack graph & forensic timeline...")
+        dashboard_path = settings.BASE_DIR / "frontend" / "dashboard.html"
+        build_dashboard_html(
+            dataset_id=dataset_id_val,
+            dataset_name=ds.name,
+            total_events_ingested=ds.events_total,
+            noise_pruned=noise_pruned,
+            story=story,
+            patterns=patterns,
+            incidents=incidents,
+            candidate_events=expanded,
+            output_path=dashboard_path,
+        )
+
+        _update_status(
+            "complete",
+            "Done",
+            100,
+            f"Analysis complete: {len(verified_steps)} verified steps identified across {len(comp_hosts)} host(s).",
+            story_id=story_id,
+            dataset_id=dataset_id_val,
+            case_id=case_id,
+        )
+
+    except Exception as e:  # noqa: BLE001
+        tb = traceback.format_exc()
+        _update_status(
+            "failed",
+            "Pipeline Error",
+            0,
+            f"Pipeline failed: {e}",
+        )
+        # Log the full traceback to stderr for debugging
+        import sys
+        print(f"[PIPELINE ERROR] {tb}", file=sys.stderr)
+    finally:
+        _PIPELINE_LOCK.release()
+
+
 @router.post("/pipeline/run")
 def run_pipeline_endpoint(
     req: PipelineRunRequest | None = None,
 ) -> dict[str, Any]:
     """
-    Executes the full end-to-end incident pipeline:
+    Launches the full end-to-end incident pipeline in a background thread.
+    Returns immediately — poll GET /pipeline/status for progress.
+
     1. Direct streaming file upload OR local file path / existing dataset ID.
     2. Streaming ingestion into Parquet (memory < 8GB).
     3. High-velocity attack pattern detection.
@@ -134,8 +337,13 @@ def run_pipeline_endpoint(
     if req is None:
         req = PipelineRunRequest()
 
-    db.init_db()
-    dataset_id = ""
+    # Prevent concurrent pipeline runs
+    if not _PIPELINE_LOCK.acquire(blocking=False):
+        return {
+            "success": False,
+            "status": "already_running",
+            "message": "A pipeline is already running. Poll /api/v1/pipeline/status for progress.",
+        }
 
     _update_status("running", "Initializing", 5, "Initializing pipeline execution...")
 
@@ -144,6 +352,8 @@ def run_pipeline_endpoint(
     top_k = req.top_k
     chunk_size = req.chunk_size
     workers = req.workers
+    dataset_id = ""
+    is_existing_dataset = False
 
     if req.file_content and req.file_content.strip():
         upload_dir = settings.BASE_DIR / "data" / "uploads"
@@ -164,6 +374,7 @@ def run_pipeline_endpoint(
                 if existing_ds:
                     dataset_id = clean_target
                     target_file = Path(existing_ds.path)
+                    is_existing_dataset = True
                 else:
                     resolved = resolve_log_path(clean_target)
                     target_file = resolved or Path(clean_target)
@@ -171,185 +382,39 @@ def run_pipeline_endpoint(
                 resolved = resolve_log_path(clean_target)
                 target_file = resolved or Path(clean_target)
         else:
+            _PIPELINE_LOCK.release()
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Either 'file' upload or 'target' path/ID must be provided.",
             )
 
-    # 2. Ingestion (if new file or not already ingested into parquet)
-    if not dataset_id:
+    # Pre-validate file existence before spawning thread
+    if not is_existing_dataset:
         if not target_file.exists():
+            _PIPELINE_LOCK.release()
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Target file or dataset ID not found: {target_file}",
             )
         if target_file.is_dir():
+            _PIPELINE_LOCK.release()
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Target '{target_file}' is a directory with no readable log files. Please provide a log file.",
             )
+        dataset_id = f"ds_{abs(hash(str(target_file))) % 100000000:08x}"
 
-        try:
-            _update_status("running", "Profiling", 15, f"Profiling log format for {target_file.name}...")
-            meta = profile_file(str(target_file))
-            dataset_id = f"ds_{abs(hash(str(target_file))) % 100000000:08x}"
-            fmt_name = meta.format_name.upper()
-
-            dataset = Dataset(
-                dataset_id=dataset_id,
-                name=target_file.name,
-                path=str(target_file.resolve()),
-                size_bytes=target_file.stat().st_size,
-                format=fmt_name,
-                status=DatasetStatus.registered,
-                events_total=0,
-                hosts=[],
-                created_at=datetime.now(timezone.utc),
-            )
-            db.save_dataset(dataset)
-
-            num_workers = workers or 4
-            _update_status("running", "Streaming Ingestion", 25, f"Streaming {target_file.name} into columnar Parquet...")
-            report = ingest_dataset_sync(
-                dataset_id=dataset_id,
-                batch_size=10000,
-                num_workers=num_workers,
-            )
-            _update_status(
-                "running",
-                "Ingestion Complete",
-                35,
-                f"Ingested {getattr(report, 'rows_out', 0):,} events into Parquet.",
-                dataset_id=dataset_id,
-            )
-        except PermissionError as e:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot open '{target_file}': {e}. Verify the path is a file and not locked.",
-            ) from e
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Ingestion failed on '{target_file.name}': {e}",
-            ) from e
-
-    ds = db.get_dataset(dataset_id)
-    if not ds:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Dataset {dataset_id} not found.")
-
-    # 3. Case Creation
-    case_id = f"case_{abs(hash((dataset_id, time.time()))) % 100000000:08x}"
-    case = Case(
-        case_id=case_id,
-        dataset_id=dataset_id,
-        name=f"Incident Analysis: {ds.name}",
-        status=CaseStatus.correlating,
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+    # Launch pipeline in background thread
+    thread = threading.Thread(
+        target=_run_pipeline_in_background,
+        args=(target_file, dataset_id, top_k, chunk_size, workers, is_existing_dataset),
+        daemon=True,
     )
-    db.save_case(case)
-    _update_status("running", "Pattern Detection", 45, "Detecting high-velocity attack patterns...", case_id=case_id)
-
-    # 4. Pattern Detection
-    patterns = detect_attack_patterns(dataset_id=dataset_id)
-
-    # 5. Noise Reduction & 2-Hop Graph Expansion
-    _update_status("running", "Noise Reduction", 55, f"Mining Top-{top_k} seeds & expanding 2-hop neighborhood...")
-    seeds = get_top_k_seeds(dataset_id, top_k=top_k, min_rarity_score=0.1)
-    expanded = expand_neighborhood(dataset_id, seeds, window_seconds=120, max_expanded_events=2000)
-
-    # 6. Raw Data Post-Processing & Adversarial Anti-Evasion
-    _update_status("running", "Anti-Evasion Shield", 68, "Raw Data Post-Processing: unmasking Base64, carat & delimiters...")
-    expanded, evasion_metrics = raw_data_post_process(expanded)
-    stealth_patterns = detect_low_and_slow_jitter(expanded)
-    if stealth_patterns:
-        patterns.extend(stealth_patterns)
-
-    events_by_id = {e.event_id: e for e in expanded}
-    incidents = correlate_incident_paths(dataset_id, expanded, all_known_hosts=ds.hosts)
-
-    comp_hosts = sorted({e.host for e in expanded})
-    sources = sorted({e.source for e in expanded})
-    noise_pruned = max(0, ds.events_total - len(expanded))
-
-    case.stats = CaseStats(
-        events_ingested=ds.events_total,
-        events_after_noise_filter=len(expanded),
-        noise_removed=noise_pruned,
-        groups=len(incidents),
-        hosts=comp_hosts[:25],
-        sources=sources,
-    )
-    case.status = CaseStatus.ready
-    case.updated_at = datetime.now(timezone.utc)
-    db.save_case(case)
-
-    # 7. AI Story Synthesis via Groq & 4-Check Verification Gate
-    _update_status("running", "AI Story Synthesis", 80, f"Synthesizing threat narrative via {settings.GROQ_MODEL}...")
-    draft, usage = write_story_for_events(
-        expanded,
-        chunk_size=chunk_size,
-        model_name=settings.GROQ_MODEL,
-        patterns=patterns,
-        provider=settings.LLM_PROVIDER,
-    )
-    verified_steps, unsupported = verify_all_steps(draft.steps, events_by_id)
-
-    now = datetime.now(timezone.utc)
-    story_id = f"story_{abs(hash(case_id)) % 100000000:08x}"
-    story = Story(
-        story_id=story_id,
-        case_id=case_id,
-        status=StoryStatus.awaiting_review,
-        created_at=now,
-        updated_at=now,
-        method=Method.casefile,
-        summary=draft.summary,
-        steps=verified_steps,
-        unsupported_claims=unsupported,
-        model_name=f"{settings.GROQ_MODEL} (SOC Analyst AI)",
-        usage=usage,
-    )
-    db.save_story(story)
-
-    # 8. Compile Unified Dashboard HTML
-    _update_status("running", "Compiling Dashboard", 95, "Compiling interactive attack graph & forensic timeline...")
-    dashboard_path = settings.BASE_DIR / "frontend" / "dashboard.html"
-    build_dashboard_html(
-        dataset_id=dataset_id,
-        dataset_name=ds.name,
-        total_events_ingested=ds.events_total,
-        noise_pruned=noise_pruned,
-        story=story,
-        patterns=patterns,
-        incidents=incidents,
-        candidate_events=expanded,
-        output_path=dashboard_path,
-    )
-
-    with open(dashboard_path, encoding="utf-8") as f:
-        html_content = f.read()
-
-    _update_status(
-        "complete",
-        "Done",
-        100,
-        f"Analysis complete: {len(verified_steps)} verified steps identified across {len(comp_hosts)} host(s).",
-        story_id=story_id,
-    )
+    thread.start()
 
     return {
         "success": True,
+        "status": "started",
+        "message": "Pipeline launched. Poll GET /api/v1/pipeline/status for live progress.",
         "dataset_id": dataset_id,
-        "dataset_name": ds.name,
-        "case_id": case_id,
-        "story_id": story_id,
-        "summary": story.summary,
-        "steps_count": len(verified_steps),
-        "compromised_hosts": comp_hosts,
-        "patterns_detected": len(patterns),
-        "evasions_unmasked": evasion_metrics.get("evasions_unmasked", 0),
-        "raw_bytes_verified": evasion_metrics.get("raw_bytes_verified", 0),
-        "dashboard_url": "/dashboard",
-        "html": html_content,
     }

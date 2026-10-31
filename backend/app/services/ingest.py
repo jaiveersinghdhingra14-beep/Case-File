@@ -329,6 +329,10 @@ def ingest_dataset_sync(
                         flush_batch(batch_records, part_idx)
                         batch_records.clear()
 
+                        # Fire progress after every batch flush for real-time UI updates
+                        if progress_callback:
+                            progress_callback(rows_in, rows_out)
+
             if progress_callback:
                 progress_callback(rows_in, rows_out)
 
