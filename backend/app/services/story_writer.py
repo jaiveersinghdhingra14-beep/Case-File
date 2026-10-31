@@ -455,7 +455,7 @@ def synthesize_executive_narrative(
 def write_story_for_events(
     events: Sequence[NormalizedEvent],
     chunk_size: int = 20,
-    max_llm_calls: int = 200,
+    max_llm_calls: int = 1,
     api_key: str | None = None,
     force_mock: bool = False,
     model_name: str | None = None,
@@ -559,20 +559,30 @@ def write_story_for_events(
             _LLM_CACHE[chunk_hash] = draft
             return c_idx, draft, len(chunk) * 45, 120, False
 
-    indexed_chunks = list(enumerate(chunks[:max_llm_calls], start=1))
-    max_workers = min(len(indexed_chunks), 4)
+    indexed_chunks = list(enumerate(chunks, start=1))
+    llm_chunks = [item for item in indexed_chunks if item[0] <= max_llm_calls]
+    mock_chunks = [item for item in indexed_chunks if item[0] > max_llm_calls]
 
     chunk_results: list[tuple[int, StoryDraftOutput, int, int, bool]] = []
-    if max_workers > 1 and (use_groq or use_gemini):
+
+    # Immediately map remaining chunks using the forensic engine (0ms latency, zero API rate limits)
+    for item in mock_chunks:
+        c_idx, chunk = item
+        draft = generate_mock_story_draft(chunk, patterns=patterns)
+        chunk_results.append((c_idx, draft, 0, 0, True))
+
+    # Process priority attack-entry chunks (at most 2 concurrent calls)
+    if llm_chunks and (use_groq or use_gemini):
+        max_workers = min(len(llm_chunks), 2)
         print(
-            f"  [LLM Pipeline] Firing {len(indexed_chunks)} story chunks concurrently across {max_workers} parallel workers..."
+            f"  [LLM Pipeline] Firing {len(llm_chunks)} priority chunk(s) concurrently across {max_workers} worker(s)..."
         )
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
-            futures = [pool.submit(_process_chunk_worker, item) for item in indexed_chunks]
+            futures = [pool.submit(_process_chunk_worker, item) for item in llm_chunks]
             for f in concurrent.futures.as_completed(futures):
                 chunk_results.append(f.result())
     else:
-        for item in indexed_chunks:
+        for item in llm_chunks:
             chunk_results.append(_process_chunk_worker(item))
 
     # Sort results by original chunk index to maintain exact chronological event order

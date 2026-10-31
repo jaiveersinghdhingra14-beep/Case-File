@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .api.errors import CaseFileException
-from .api.routes import cases, datasets, demo, health, incidents, stories
+from .api.routes import cases, datasets, demo, health, incidents, pipeline, stories
 from .config import settings
 from .schemas import ErrorResponse
 from .store import db
@@ -58,6 +58,7 @@ app.include_router(datasets.router, prefix="/api/v1", tags=["Datasets"])
 app.include_router(incidents.router, prefix="/api/v1", tags=["Incidents"])
 app.include_router(cases.router, prefix="/api/v1", tags=["Cases"])
 app.include_router(stories.router, prefix="/api/v1", tags=["Stories"])
+app.include_router(pipeline.router, prefix="/api/v1", tags=["Pipeline"])
 app.include_router(demo.router, prefix="/api/v1", tags=["Demo"])
 
 # Mount dynamic frontend

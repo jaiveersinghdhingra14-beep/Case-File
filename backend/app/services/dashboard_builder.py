@@ -486,6 +486,7 @@ def build_dashboard_html(
       transition: background 0.2s;
     }}
     .btn:hover {{ background: #334155; }}
+    @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
   </style>
 </head>
 <body>
@@ -499,6 +500,74 @@ def build_dashboard_html(
     </div>
     <div class="meta-info">
       Dataset: {dataset_id} ({dataset_name}) | Model: {story.model_name}
+    </div>
+  </div>
+
+  <!-- Interactive Ingestion & Real-Time Incident Hub -->
+  <div class="section-card" id="ingestion-hub" style="border: 1px solid rgba(59, 130, 246, 0.4); box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4); margin-bottom: 24px;">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; background: linear-gradient(90deg, #1e293b, #0f172a); border-bottom: 1px solid rgba(59, 130, 246, 0.3);">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="font-size: 18px;">⚡</span>
+        <span style="font-weight: 700; font-size: 15px; color: #38bdf8; text-transform: uppercase; letter-spacing: 0.5px;">Live Telemetry Ingestion &amp; Incident Reconstruction Hub</span>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3);">Pipeline API Ready</span>
+        <button class="btn" onclick="toggleHubCollapse()" id="hub-toggle-btn" style="padding: 3px 8px; font-size: 11px;">Minimize Hub</button>
+      </div>
+    </div>
+    <div class="card-body" id="hub-body" style="padding: 20px;">
+      <div style="display: grid; grid-template-columns: 1.2fr 1fr; gap: 20px; align-items: stretch;">
+        
+        <!-- Left: Drag-and-Drop Dropzone -->
+        <div id="dropzone" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)" onclick="document.getElementById('file-input').click()" style="border: 2px dashed rgba(59, 130, 246, 0.5); border-radius: 8px; background: rgba(15, 23, 42, 0.6); padding: 24px; text-align: center; cursor: pointer; transition: all 0.2s ease; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+          <input type="file" id="file-input" style="display: none;" onchange="handleFileSelect(event)" accept=".log,.txt,.csv,.json,.parquet">
+          <div style="font-size: 32px; margin-bottom: 8px;">📁</div>
+          <div style="font-weight: 600; font-size: 14px; color: #f1f5f9; margin-bottom: 4px;" id="dropzone-label">Click or Drag &amp; Drop Log File Here</div>
+          <div style="font-size: 12px; color: var(--text-muted);">Supports FortiGate UTM, Syslog, Zeek, CSV or Parquet (10MB – 30GB+)</div>
+          <div id="selected-file-badge" style="display: none; margin-top: 10px; padding: 4px 10px; background: rgba(59, 130, 246, 0.2); border: 1px solid #3b82f6; border-radius: 4px; font-size: 12px; color: #93c5fd; font-family: 'JetBrains Mono', monospace;"></div>
+        </div>
+
+        <!-- Right: Local Path Runner & Dataset Controls -->
+        <div style="display: flex; flex-direction: column; justify-content: space-between; background: rgba(15, 23, 42, 0.4); border: 1px solid var(--card-border); border-radius: 8px; padding: 18px;">
+          <div>
+            <label style="font-size: 12px; font-weight: 600; color: #cbd5e1; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 6px;">Zero-Upload Local Path / Dataset ID (For 15GB+ logs):</label>
+            <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+              <input type="text" id="target-input" placeholder="e.g. D:\firex-30G.log or ds_e58b2719" style="flex: 1; background: #060911; border: 1px solid var(--card-border); border-radius: 4px; padding: 8px 12px; color: #f8fafc; font-family: 'JetBrains Mono', monospace; font-size: 13px;" value="{dataset_id}">
+              <button class="btn" onclick="quickRun('ds_e58b2719')" title="Quick Run with pre-indexed test dataset" style="white-space: nowrap; font-size: 11px;">Default Sample</button>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px;">
+              <div>
+                <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Top-K Seeds Filter:</label>
+                <input type="number" id="top-k-input" value="50" min="10" max="200" style="width: 100%; background: #060911; border: 1px solid var(--card-border); border-radius: 4px; padding: 6px 10px; color: #f8fafc; font-size: 12px;">
+              </div>
+              <div>
+                <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Chunk Size:</label>
+                <input type="number" id="chunk-size-input" value="20" min="5" max="50" style="width: 100%; background: #060911; border: 1px solid var(--card-border); border-radius: 4px; padding: 6px 10px; color: #f8fafc; font-size: 12px;">
+              </div>
+            </div>
+          </div>
+
+          <button id="run-pipeline-btn" onclick="triggerPipeline()" style="width: 100%; background: linear-gradient(90deg, #2563eb, #7c3aed); border: none; border-radius: 6px; padding: 10px 16px; color: #ffffff; font-weight: 700; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35); transition: opacity 0.2s;">
+            <span>🚀 Run End-to-End DFIR Pipeline</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Live Progress & Stage Tracking -->
+      <div id="pipeline-progress-container" style="display: none; margin-top: 18px; padding-top: 16px; border-top: 1px solid rgba(59, 130, 246, 0.2);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div id="progress-spinner" style="width: 14px; height: 14px; border: 2px solid #38bdf8; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+            <span id="progress-stage" style="font-weight: 600; font-size: 13px; color: #38bdf8;">Processing...</span>
+          </div>
+          <span id="progress-percent" style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: #10b981;">0%</span>
+        </div>
+        <div style="height: 8px; width: 100%; background: #060911; border-radius: 4px; overflow: hidden; border: 1px solid var(--card-border); margin-bottom: 8px;">
+          <div id="progress-bar-fill" style="height: 100%; width: 0%; background: linear-gradient(90deg, #3b82f6, #8b5cf6, #10b981); transition: width 0.3s ease;"></div>
+        </div>
+        <div id="progress-message" style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #94a3b8;">Initializing execution...</div>
+      </div>
     </div>
   </div>
 
@@ -1041,6 +1110,198 @@ def build_dashboard_html(
       if (btnElem && btnElem.classList.contains('btn')) {{
         btnElem.style.borderColor = '#38bdf8';
         btnElem.style.color = '#38bdf8';
+      }}
+    }}
+
+    let selectedUploadFile = null;
+    let pollInterval = null;
+
+    function handleDragOver(e) {{
+      e.preventDefault();
+      const dropzone = document.getElementById('dropzone');
+      if (dropzone) {{
+        dropzone.style.borderColor = '#38bdf8';
+        dropzone.style.background = 'rgba(56, 189, 248, 0.1)';
+      }}
+    }}
+
+    function handleDragLeave(e) {{
+      e.preventDefault();
+      const dropzone = document.getElementById('dropzone');
+      if (dropzone) {{
+        dropzone.style.borderColor = 'rgba(59, 130, 246, 0.5)';
+        dropzone.style.background = 'rgba(15, 23, 42, 0.6)';
+      }}
+    }}
+
+    function handleDrop(e) {{
+      e.preventDefault();
+      handleDragLeave(e);
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {{
+        setUploadFile(e.dataTransfer.files[0]);
+      }}
+    }}
+
+    function handleFileSelect(e) {{
+      if (e.target && e.target.files && e.target.files.length > 0) {{
+        setUploadFile(e.target.files[0]);
+      }}
+    }}
+
+    function setUploadFile(file) {{
+      selectedUploadFile = file;
+      const badge = document.getElementById('selected-file-badge');
+      if (badge) {{
+        badge.style.display = 'inline-block';
+        badge.innerText = 'Selected: ' + file.name + ' (' + (file.size / (1024 * 1024)).toFixed(2) + ' MB)';
+      }}
+      const label = document.getElementById('dropzone-label');
+      if (label) {{
+        label.innerText = 'File Ready for Ingestion';
+      }}
+    }}
+
+    function quickRun(datasetId) {{
+      const targetInput = document.getElementById('target-input');
+      if (targetInput) {{
+        targetInput.value = datasetId;
+      }}
+      selectedUploadFile = null;
+      const badge = document.getElementById('selected-file-badge');
+      if (badge) badge.style.display = 'none';
+      const label = document.getElementById('dropzone-label');
+      if (label) label.innerText = 'Click or Drag & Drop Log File Here';
+      triggerPipeline();
+    }}
+
+    function toggleHubCollapse() {{
+      const body = document.getElementById('hub-body');
+      const btn = document.getElementById('hub-toggle-btn');
+      if (body) {{
+        if (body.style.display === 'none') {{
+          body.style.display = 'block';
+          if (btn) btn.innerText = 'Minimize Hub';
+        }} else {{
+          body.style.display = 'none';
+          if (btn) btn.innerText = 'Expand Hub';
+        }}
+      }}
+    }}
+
+    async function triggerPipeline() {{
+      const btn = document.getElementById('run-pipeline-btn');
+      const progressBox = document.getElementById('pipeline-progress-container');
+      const stageEl = document.getElementById('progress-stage');
+      const pctEl = document.getElementById('progress-percent');
+      const barEl = document.getElementById('progress-bar-fill');
+      const msgEl = document.getElementById('progress-message');
+
+      const targetVal = document.getElementById('target-input') ? document.getElementById('target-input').value.trim() : '';
+      const topK = document.getElementById('top-k-input') ? document.getElementById('top-k-input').value : 50;
+      const chunkSize = document.getElementById('chunk-size-input') ? document.getElementById('chunk-size-input').value : 20;
+
+      if (!selectedUploadFile && !targetVal) {{
+        alert('Please either upload a log file or enter a local file path / dataset ID.');
+        return;
+      }}
+
+      if (btn) {{
+        btn.disabled = true;
+        btn.style.opacity = '0.6';
+      }}
+      if (progressBox) progressBox.style.display = 'block';
+      if (barEl) barEl.style.width = '5%';
+      if (pctEl) pctEl.innerText = '5%';
+      if (stageEl) stageEl.innerText = 'Connecting...';
+      if (msgEl) msgEl.innerText = 'Uploading telemetry payload to CaseFile engine...';
+
+      if (pollInterval) clearInterval(pollInterval);
+      pollInterval = setInterval(async () => {{
+        try {{
+          const res = await fetch('/api/v1/pipeline/status');
+          if (res.ok) {{
+            const st = await res.json();
+            if (st.stage && stageEl) stageEl.innerText = st.stage;
+            if (st.percent && barEl && pctEl) {{
+              barEl.style.width = st.percent + '%';
+              pctEl.innerText = st.percent + '%';
+            }}
+            if (st.message && msgEl) msgEl.innerText = st.message;
+          }}
+        }} catch (_) {{}}
+      }}, 1000);
+
+      let fileContent = null;
+      let fileName = null;
+      if (selectedUploadFile) {{
+        fileName = selectedUploadFile.name;
+        if (msgEl) msgEl.innerText = 'Reading file in browser...';
+        fileContent = await new Promise((resolve, reject) => {{
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(new Error('Failed to read selected file'));
+          reader.readAsText(selectedUploadFile);
+        }});
+      }}
+
+      const payload = {{
+        target: targetVal || null,
+        filename: fileName,
+        file_content: fileContent,
+        top_k: parseInt(topK) || 50,
+        chunk_size: parseInt(chunkSize) || 20
+      }};
+
+      try {{
+        const response = await fetch('/api/v1/pipeline/run', {{
+          method: 'POST',
+          headers: {{
+            'Content-Type': 'application/json'
+          }},
+          body: JSON.stringify(payload),
+        }});
+
+        if (pollInterval) clearInterval(pollInterval);
+
+        if (!response.ok) {{
+          const errData = await response.json().catch(() => ({{ detail: 'Unknown error occurred.' }}));
+          throw new Error(errData.detail || 'Pipeline execution failed.');
+        }}
+
+        const data = await response.json();
+        if (barEl) barEl.style.width = '100%';
+        if (pctEl) pctEl.innerText = '100%';
+        if (stageEl) stageEl.innerText = 'Reconstruction Complete!';
+        if (msgEl) {{
+          const hostsCount = data.compromised_hosts ? data.compromised_hosts.length : 0;
+          msgEl.innerText = 'Identified ' + data.steps_count + ' verified attack steps across ' + hostsCount + ' host(s). Updating dashboard...';
+        }}
+
+        setTimeout(() => {{
+          if (data.html) {{
+            document.open();
+            document.write(data.html);
+            document.close();
+          }} else {{
+            window.location.reload();
+          }}
+        }}, 1200);
+
+      }} catch (err) {{
+        if (pollInterval) clearInterval(pollInterval);
+        if (btn) {{
+          btn.disabled = false;
+          btn.style.opacity = '1';
+        }}
+        if (stageEl) {{
+          stageEl.innerText = 'Execution Failed';
+          stageEl.style.color = 'var(--accent-red)';
+        }}
+        if (msgEl) {{
+          msgEl.innerText = 'Error: ' + err.message;
+          msgEl.style.color = 'var(--accent-red)';
+        }}
+        if (barEl) barEl.style.background = 'var(--accent-red)';
       }}
     }}
   </script>
