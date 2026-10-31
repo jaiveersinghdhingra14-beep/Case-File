@@ -49,6 +49,7 @@ from backend.app.schemas import (
     Story,
     StoryStatus,
 )
+from backend.app.services.anti_evasion import detect_low_and_slow_jitter, raw_data_post_process
 from backend.app.services.correlator import correlate_incident_paths
 from backend.app.services.dashboard_builder import build_dashboard_html
 from backend.app.services.expander import expand_neighborhood
@@ -319,6 +320,18 @@ def cmd_run_all(args: argparse.Namespace) -> int:
     t0_corr = time.perf_counter()
     seeds = get_top_k_seeds(dataset_id, top_k=args.top_k, min_rarity_score=0.1)
     expanded = expand_neighborhood(dataset_id, seeds, window_seconds=120, max_expanded_events=2000)
+
+    # Raw Data Post-Processing & Adversarial Anti-Evasion De-Masking
+    t0_evasion = time.perf_counter()
+    expanded, evasion_metrics = raw_data_post_process(expanded)
+    stealth_patterns = detect_low_and_slow_jitter(expanded)
+    if stealth_patterns:
+        patterns.extend(stealth_patterns)
+    print(
+        f"  Anti-Evasion Shield: {evasion_metrics['raw_bytes_verified']} raw byte anchors verified | "
+        f"{evasion_metrics['evasions_unmasked']} stealth evasion(s) de-masked ({time.perf_counter() - t0_evasion:.3f}s)"
+    )
+
     events_by_id = {e.event_id: e for e in expanded}
     incidents = correlate_incident_paths(dataset_id, expanded, all_known_hosts=ds.hosts)
 

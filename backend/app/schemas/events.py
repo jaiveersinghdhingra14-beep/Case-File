@@ -37,6 +37,11 @@ class NormalizedEvent(BaseModel):
     rarity_score: float | None = Field(default=None, description="Mathematical rarity score calculated by reducer.")
     is_seed: bool = Field(default=False, description="True if event was chosen as top-K attack seed.")
 
+    # Anti-Evasion & De-Masking Fields
+    is_evasion: bool = Field(default=False, description="True if adversary evasion/obfuscation was unmasked.")
+    evasion_notes: list[str] = Field(default_factory=list, description="Forensic notes detailing unmasked evasion.")
+    decoded_payload: str | None = Field(default=None, description="De-obfuscated or decoded command/payload.")
+
 
 class EventList(BaseModel):
     items: list[NormalizedEvent] = Field(description="Events in time order.")

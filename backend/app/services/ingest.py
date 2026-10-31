@@ -239,6 +239,10 @@ def ingest_dataset_sync(
     earliest_ts: datetime | None = None
     latest_ts: datetime | None = None
 
+    # Compute partition offset to support multi-file / prior log file append without overwriting
+    existing_parts = len(list(out_dir.glob("*.parquet")))
+    start_p_idx = existing_parts + 1
+
     if num_workers > 1 and len(shards) > 1:
         # Multi-Core Parallel Ingestion across CPU cores
         with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
@@ -253,7 +257,7 @@ def ingest_dataset_sync(
                     fmt_name,
                     batch_size,
                 ): (s_start, s_end)
-                for p_idx, (s_start, s_end) in enumerate(shards, start=1)
+                for p_idx, (s_start, s_end) in enumerate(shards, start=start_p_idx)
             }
             for future in concurrent.futures.as_completed(futures):
                 w_in, w_out, w_hosts, w_early, w_late = future.result()
@@ -279,7 +283,7 @@ def ingest_dataset_sync(
     else:
         # Single-Core Sequential Ingestion
         batch_records: list[dict[str, Any]] = []
-        part_idx = 0
+        part_idx = start_p_idx
 
         def flush_batch(records: list[dict[str, Any]], part_num: int) -> None:
             nonlocal peak_rss

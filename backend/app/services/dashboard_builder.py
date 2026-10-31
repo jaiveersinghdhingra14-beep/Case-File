@@ -524,6 +524,11 @@ def build_dashboard_html(
       <div class="kpi-value" style="color: var(--accent-red);">{len(patterns)} Clusters</div>
       <div class="kpi-sub">Brute-force, Exploit Waves & C2</div>
     </div>
+    <div class="kpi-card" style="border-color: rgba(139, 92, 246, 0.4);">
+      <div class="kpi-title" style="color: #a78bfa;">🛡️ Anti-Evasion Shield</div>
+      <div class="kpi-value" style="color: #c084fc;">ACTIVE</div>
+      <div class="kpi-sub">Raw Byte Lineage & De-Masking Anchored</div>
+    </div>
   </div>
 
   <!-- Section 1: Executive AI Narrative -->
@@ -734,6 +739,21 @@ def build_dashboard_html(
             else (", ".join(getattr(s, "evidence_event_ids", [])) or "telemetry_verified")
         )
 
+        has_evasion = False
+        decoded_payloads = []
+        for eid in getattr(s, "evidence_event_ids", []):
+            ev = events_by_id.get(eid)
+            if ev and getattr(ev, "is_evasion", False):
+                has_evasion = True
+                if getattr(ev, "decoded_payload", None):
+                    decoded_payloads.append(ev.decoded_payload)
+        for ev_item in getattr(s, "evidence", []):
+            ev = events_by_id.get(ev_item.event_id)
+            if ev and getattr(ev, "is_evasion", False):
+                has_evasion = True
+                if getattr(ev, "decoded_payload", None):
+                    decoded_payloads.append(ev.decoded_payload)
+
         steps_metadata.append(
             {
                 "step": s,
@@ -747,6 +767,8 @@ def build_dashboard_html(
                 "dur_str": dur_str,
                 "t_id": t_id,
                 "cite_str": cite_str,
+                "has_evasion": has_evasion,
+                "decoded_payload": decoded_payloads[0] if decoded_payloads else None,
             }
         )
 
@@ -825,12 +847,14 @@ def build_dashboard_html(
               {meta["stage_icon"]} {meta["stage_name"].upper()}
             </span>
             <div style="display: flex; gap: 6px; align-items: center;">
+              {'<span class="badge" style="background: rgba(139, 92, 246, 0.25); color: #c084fc; border: 1px solid #8b5cf6; font-size: 10px;">🛡️ DE-OBFUSCATED EVASION</span>' if meta.get("has_evasion") else ''}
               <span class="badge badge-mitre">{meta["t_id"]}</span>
               <span class="badge badge-verified">VERIFIED</span>
             </div>
           </div>
           <div class="timeline-title" style="font-size: 15px; font-weight: 600; color: #ffffff;">{s.title}</div>
           <div class="timeline-desc">{s.description}</div>
+          {f'<div style="font-size: 12px; color: #c084fc; margin: 6px 0; font-family: monospace; background: rgba(139, 92, 246, 0.08); border-left: 3px solid #8b5cf6; padding: 6px 10px; border-radius: 4px;"><b>🛡️ De-Masked Evasion Payload:</b> {meta["decoded_payload"]}</div>' if meta.get("decoded_payload") else ''}
           <div class="timeline-cite">Citing Forensics: [{meta["cite_str"]}]</div>
         </div>
       </div>
