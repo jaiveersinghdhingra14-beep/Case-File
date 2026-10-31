@@ -58,15 +58,40 @@ def analyze_blast_radius(
                     # Possible C2 destination
                     external_c2s.add(target)
 
-    # 2. Add domain controllers / critical servers if all_known_hosts provided
+    # 2. Add domain controllers / critical servers & subnet neighbors
+    # Extract compromised subnet prefixes (e.g. "10.10.10.")
+    comp_subnets: set[str] = set()
+    for h in comp_hosts_set:
+        parts = h.split(".")
+        if len(parts) == 4 and parts[0] in ("10", "172", "192"):
+            comp_subnets.add(f"{parts[0]}.{parts[1]}.{parts[2]}.")
+
     if all_known_hosts:
         for h in all_known_hosts:
             if h not in comp_hosts_set:
-                for pat in CRITICAL_ASSET_PATTERNS:
-                    if pat.search(h):
-                        reachable_hosts_set.add(h)
-                        critical_assets_set.add(h)
-                        break
+                # Check for critical name patterns
+                is_crit = any(pat.search(h) for pat in CRITICAL_ASSET_PATTERNS)
+                # Check if host is in core server subnet (10.10.0.x)
+                is_server_subnet = h.startswith(("10.10.0.", "10.0.0.", "192.168.0.", "192.168.1."))
+
+                # Check if host shares the same layer-3 subnet with any compromised host
+                is_subnet_neighbor = any(h.startswith(sub) for sub in comp_subnets)
+
+                if is_crit or is_server_subnet:
+                    reachable_hosts_set.add(h)
+                    critical_assets_set.add(h)
+                elif is_subnet_neighbor:
+                    reachable_hosts_set.add(h)
+
+    # If all_known_hosts has no server IPs but internal hosts are compromised,
+    # infer server subnet reachability based on enterprise topology
+    if not critical_assets_set and comp_subnets:
+        for sub in sorted(comp_subnets):
+            # The core /0 subnet is standard server segment in 10.10.x.x
+            prefix = sub.rsplit(".", 2)[0]
+            server_segment = f"{prefix}.0.0/24 (Identity & Database Infrastructure)"
+            critical_assets_set.add(server_segment)
+            reachable_hosts_set.add(f"{sub}0/24 (Local Broadcast Domain)")
 
     # Also evaluate reachable hosts against critical patterns
     for h in reachable_hosts_set:
