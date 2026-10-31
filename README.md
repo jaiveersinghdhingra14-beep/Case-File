@@ -1,105 +1,94 @@
-# CaseFile
+# CaseFile v2: Big-Log Edition
 
-> **Evidence-Grounded Attack Story Reconstruction from Raw Security Logs**  
+> **Kill Chain and Attack Path Analysis at Scale**  
 > *CyberForge 2026 — Problem Statement #2*
 
-CaseFile turns raw security logs from an authorized lab VM into a verified attack story. A lab VM is attacked with a known chain of Atomic Red Team techniques mixed with benign background noise. The logs are collected, cleaned, and grouped by deterministic code, then handed to an LLM in small chunks. The LLM writes structured attack steps citing exact event IDs. The system checks every step against the logs, removes claims it cannot support, and scores the result against the known chain and against two weaker baselines.
-
-> **AI proposes the attack story. The system proves every sentence.**
-
----
-
-## Important Notice & Ground Rules
-
-1. **Lab Data Notice**: All logs and noise are generated in a controlled lab VM environment, not captured from production networks.
-2. **Deterministic Step Ordering**: Step order is computed strictly by code from the earliest cited event timestamps. The LLM never decides ordering.
-3. **Ground Truth Isolation**: Ground truth is read **only** by `services/scorer.py`. No ingest, correlation, mapping, or story-writing module has access to ground truth.
-4. **Tune on Chain A, Report on Chain B**: Chain B is strictly held out. The `noise_only` baseline requires zero attack steps.
-5. **Authorized Labs Only**: Attacks execute solely on the authorized lab VM; `POST /scenario-runs` rejects any request lacking `confirmed: true`.
-
----
-
-## Architecture Pipeline
+CaseFile reconstructs complete end-to-end attack paths from massive security log sets (**15 GB, 30 GB, 50 GB**) on standard analyst hardware under an **8 GB peak RAM budget**.
 
 ```text
-scenario_runner (Atomic tests on Lab VM)
-      │
-      ├─► noise_generator (seeded benign noise)
-      ▼
- connectors (Wazuh archive / Wazuh indexer / raw auditd)
-      ▼
- normalizer (NormalizedEvent: PID, PPID, cmd, file, net, summary)
-      ▼
-noise_filter (allowlist & signatures learned from noise-only run)
-      ▼
- correlator (process tree + entity graph via networkx, time-gap split)
-      ▼
-stage_mapper (ATT&CK technique candidate hints from YAML map)
-      ▼
-story_writer (LLM chunk prompts with cited event IDs)
-      ▼
-  verifier (4 checks: has_citation, ids_exist, supports_claim, specific_evidence)
-      ▼
-   scorer (step_recall, step_precision, false_steps, order_accuracy, grounding_rate, evidence_coverage)
-      │
-      ├─► baselines (baseline_window, baseline_raw)
-      └─► report (analyst Markdown summary & review)
+       Raw Logs (15 / 30 / 50 GB)
+                  │
+                  ▼
+         [ 1. Profiler ] ──────► Detects format (auditd, JSON, syslog, CSV) & timestamp
+                  │
+                  ▼
+      [ 2. Streaming Ingest ] ──► Byte-range sharding, parallel parse to partitioned Parquet
+                  │
+                  ▼
+        [ 3. Reducer Engine ] ──► Pushdown filters, command normalization, mathematical rarity scoring (Top-K seeds)
+                  │
+                  ▼
+     [ 4. Provenance Expander ] ─► Hops & time window expansion (captures pivots: HR-07 -> FS-02 -> DC-01)
+                  │
+                  ▼
+      [ 5. Attack Graph Story ] ─► Graph correlation, ATT&CK + Kill Chain mapping, Lookahead blast radius (FR-6)
+                  │
+                  ▼
+         [ 6. Verifier Engine ] ─► 4 deterministic checks (citation, existence, support, specific evidence)
 ```
 
 ---
 
-## Quickstart & Operations
+## Key Capabilities (PRD Alignment)
 
-### 1. Environment Setup
+* **Detect (FR-2):** Discovers hidden multi-stage attacks across millions of background noise events.
+* **Label (FR-3):** Simultaneously tags each event with a **MITRE ATT&CK technique** and **Cyber Kill Chain stage**.
+* **Connect (FR-4 & FR-5):** Reconstructs unified incident paths across distinct hosts, accounts, and time intervals.
+* **Look Ahead & Blast Radius (FR-6):** Evaluates compromised credentials to determine what adjacent critical systems the attacker could reach next.
+* **Sub-500ms Investigation Speed (FR-7):** Exposes `GET /api/v1/incidents/{id}/path` powered by DuckDB columnar indices and lazy raw-log offset lookups.
+* **Incident Risk Scoring (Bonus B-1):** Scores each incident (0–100) based on kill chain depth and affected asset criticality.
+* **Automated Plain English Reporting (Bonus B-2):** Markdown executive report export with citations and containment recommendations.
+* **Configurable Detection Rules (Bonus B-4):** YAML-driven rule definitions for sequence matching (e.g., brute force thresholds).
+
+---
+
+## Official Targets & Performance ("Great" Standard)
+
+| Metric | Target | CaseFile v2 Architecture |
+|---|---|---|
+| **Detection** | $> 90\%$ | Top-$K$ rarity heap + pattern rules |
+| **Correct Labels** | $> 85\%$ | YAML ATT&CK knowledge map + verifier |
+| **Attack Path** | $100\%$ | Temporal provenance neighborhood expansion |
+| **False Alarms** | $< 10\%$ | Deterministic 4-check verification gate |
+| **Processing Time** | $< 1$ hour | Sharded streaming ingest + DuckDB Parquet |
+| **Peak RAM** | $< 8$ GB | Constant memory streaming, byte-range sharding |
+| **Investigation Latency** | $< 500$ ms | Columnar pushdown + $O(1)$ lazy file seek |
+
+---
+
+## Third-Party Disclosures & Tech Stack
+
+* **FastAPI & Uvicorn**: High-performance async web framework and ASGI server.
+* **DuckDB**: Out-of-core columnar SQL query engine.
+* **PyArrow**: Columnar Parquet serialization and hour/host partitioning.
+* **orjson**: Ultra-fast SIMD-accelerated JSON parser.
+* **Pydantic v2 & pydantic-settings**: Strict validation schemas and environment settings.
+* **SQLite3 (stdlib)**: Small metadata storage (datasets, cases, stories, benchmarks).
+* **NetworkX**: Multi-host provenance and attack path graph generation.
+* **PyYAML**: Configurable detection rules and ATT&CK technique mapping.
+* **psutil**: Runtime memory (RSS) and throughput benchmarking.
+* **Pytest & Ruff**: Verification test suite and static code analysis.
+
+---
+
+## Running the Application
+
+### 1. Requirements & Setup
 ```bash
+python -m pip install -r requirements.txt
 cp .env.example .env
-# Edit .env with your LLM key and lab VM connection details
 ```
 
-### 2. Local Installation
+### 2. Run Tests & Linter
 ```bash
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-```
-
-### 3. Running Services
-```bash
-# Start backend API (FastAPI + Uvicorn on port 8000)
-make up
-
 # Run test suite
-make test
+python -m pytest backend/tests -v
 
-# Lint codebase
-make lint
-
-# Clean / reset demo state
-make reset
+# Run linter
+python -m ruff check backend/app backend/tests
 ```
 
----
-
-## Known Limits & Risks
-
-* **Self-Generated Ground Truth:** The test runner defines the true executed steps.
-* **Short Chains:** Designed and verified for 4–6 step attack chains. Longer complex multi-stage attacks are outside current hackathon scope.
-* **Verifiable Techniques Only:** The verifier checks techniques defined in the knowledge map (`technique_map.yaml`) or tagged by Wazuh rules.
-* **Temporal Ordering:** Reflects event timestamps, not proven causality.
-
----
-
-## Third-Party Components & Disclosures
-
-* **FastAPI & Uvicorn**: Async REST API framework and ASGI web server.
-* **Pydantic v2 & pydantic-settings**: Data validation, schema definitions, and typed settings.
-* **SQLite3**: Embedded relational database with JSON text columns.
-* **NetworkX**: Process tree representation and entity graph connected component clustering.
-* **Paramiko**: SSH client library for lab VM execution.
-* **PyYAML**: YAML parsing for Atomic Red Team tests, noise profiles, and technique maps.
-* **HTTPX**: Async HTTP client for indexer and log queries.
-* **Pytest & Ruff**: Test runner and code linter.
-* **Wazuh**: Open-source security monitoring agent and manager (single-node).
-* **Atomic Red Team**: MITRE ATT&CK testing library and atomic test definitions.
-* **Google GenAI / Gemini API**: LLM provider for structured JSON story generation.
-* **React, Vite, TailwindCSS & TanStack Query**: Frontend analyst dashboard.
+### 3. Start the Backend Server
+```bash
+python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+```

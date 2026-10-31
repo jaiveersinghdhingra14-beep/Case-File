@@ -27,13 +27,16 @@ wheels/
 .env
 *.pem
 *.key
-id_rsa*
-id_ed25519*
 
-# Database & runtime files
+# Database, Parquet & Runtime storage
 *.db
 *.sqlite
 *.sqlite3
+*.parquet
+data/parquet/*
+!data/parquet/.gitkeep
+data/raw/*
+!data/raw/.gitkeep
 *.log
 
 # Testing & Coverage
