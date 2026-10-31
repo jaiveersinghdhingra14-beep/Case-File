@@ -285,18 +285,41 @@ def cmd_run_all(args: argparse.Namespace) -> int:
         print(f"  Candidate Subgraph Patterns Detected: {len(patterns)} burst clusters")
 
     # 4. Synthesize Story & Verify Citations
-    active_provider = settings.LLM_PROVIDER.upper()
-    active_model = settings.GROQ_MODEL if settings.LLM_PROVIDER == "groq" else settings.LLM_MODEL
-    active_key = (settings.GROQ_API_KEY if settings.LLM_PROVIDER == "groq" else settings.GEMINI_API_KEY).strip()
+    groq_key = settings.GROQ_API_KEY.strip()
+    gemini_key = settings.GEMINI_API_KEY.strip()
+
+    # Smart auto-detection: if groq_key is present, default to GROQ
+    forced_provider = getattr(args, "provider", None)
+    if forced_provider:
+        active_provider = forced_provider.lower()
+    elif groq_key or settings.LLM_PROVIDER.lower() == "groq":
+        active_provider = "groq"
+    elif gemini_key:
+        active_provider = "gemini"
+    else:
+        active_provider = settings.LLM_PROVIDER.lower()
+
+    custom_model = getattr(args, "model", None)
+    if active_provider == "groq":
+        active_model = custom_model or settings.GROQ_MODEL
+        active_key = groq_key
+    elif active_provider == "gemini":
+        active_model = custom_model or settings.LLM_MODEL
+        active_key = gemini_key
+    else:
+        active_model = "MockLLM"
+        active_key = ""
+
     model_label = f"{active_model} (SOC Analyst AI)" if active_key else "MockLLM-Verified"
 
-    print(f"\n[4/5] Synthesizing Narrative via {active_provider} ({active_model}) & 4-Check Verification...")
+    print(f"\n[4/5] Synthesizing Narrative via {active_provider.upper()} ({active_model}) & 4-Check Verification...")
     t0_story = time.perf_counter()
     draft, usage = write_story_for_events(
         expanded,
         chunk_size=args.chunk_size,
         model_name=active_model,
         patterns=patterns,
+        provider=active_provider,
     )
     verified_steps, unsupported = verify_all_steps(draft.steps, events_by_id)
 
@@ -386,6 +409,13 @@ def main():
     p_run.add_argument("--chunk-size", type=int, default=20, help="Events per LLM chunk (default: 20)")
     p_run.add_argument("--batch-size", type=int, default=10000, help="Ingestion batch size (default: 10,000)")
     p_run.add_argument("--workers", type=int, default=None, help="CPU workers for parallel ingestion")
+    p_run.add_argument(
+        "--provider",
+        choices=["groq", "gemini", "mock"],
+        default=None,
+        help="Force LLM provider (groq, gemini, or mock)",
+    )
+    p_run.add_argument("--model", default=None, help="LLM model override (e.g. llama-3.3-70b-versatile)")
     p_run.add_argument("--no-browser", action="store_true", help="Do not automatically open dashboard in browser")
 
     # list

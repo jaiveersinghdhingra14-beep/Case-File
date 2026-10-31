@@ -107,7 +107,7 @@ def generate_groq_story_draft(
 
     from groq import Groq
 
-    client = Groq(api_key=api_key)
+    client = Groq(api_key=api_key, timeout=25.0)
 
     telemetry_lines = []
     for e in events:
@@ -246,22 +246,30 @@ def generate_gemini_story_draft(
         if alt not in candidate_models:
             candidate_models.append(alt)
 
+    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import TimeoutError as FuturesTimeout
+
     response = None
     last_err = None
 
     for m in candidate_models:
         try:
-            response = client.models.generate_content(
-                model=m,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    response_mime_type="application/json",
-                    response_schema=StoryDraftOutput,
-                    temperature=0.1,
-                ),
-            )
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(
+                    client.models.generate_content,
+                    model=m,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system_instruction,
+                        response_mime_type="application/json",
+                        response_schema=StoryDraftOutput,
+                        temperature=0.1,
+                    ),
+                )
+                response = future.result(timeout=15.0)
             break
+        except FuturesTimeout:
+            raise TimeoutError("Gemini API call timed out after 15 seconds") from None
         except Exception as e:
             last_err = e
             err_str = str(e)
@@ -287,6 +295,7 @@ def write_story_for_events(
     force_mock: bool = False,
     model_name: str | None = None,
     patterns: Sequence[AttackPattern] | None = None,
+    provider: str | None = None,
 ) -> tuple[StoryDraftOutput, TokenUsage]:
     """
     Generate evidence-grounded story drafts across bounded event chunks with caching.
@@ -295,11 +304,27 @@ def write_story_for_events(
     if not events:
         return StoryDraftOutput(summary="No events to summarize.", steps=[], assumptions=[]), TokenUsage()
 
-    groq_key = (api_key if settings.LLM_PROVIDER == "groq" else "") or settings.GROQ_API_KEY.strip()
-    gemini_key = (api_key if settings.LLM_PROVIDER == "gemini" else "") or settings.GEMINI_API_KEY.strip()
+    groq_key = settings.GROQ_API_KEY.strip()
+    gemini_key = settings.GEMINI_API_KEY.strip()
 
-    use_groq = bool(groq_key and not force_mock and settings.LLM_PROVIDER == "groq")
-    use_gemini = bool(gemini_key and not force_mock and settings.LLM_PROVIDER == "gemini")
+    if api_key:
+        if api_key.startswith("gsk_"):
+            groq_key = api_key
+        else:
+            gemini_key = api_key
+
+    # Smart provider selection: if GROQ key is set, prioritize GROQ automatically
+    resolved_provider = (provider or "").lower()
+    if not resolved_provider:
+        if groq_key or settings.LLM_PROVIDER.lower() == "groq":
+            resolved_provider = "groq"
+        elif gemini_key or settings.LLM_PROVIDER.lower() == "gemini":
+            resolved_provider = "gemini"
+        else:
+            resolved_provider = "mock"
+
+    use_groq = bool(groq_key and not force_mock and resolved_provider == "groq")
+    use_gemini = bool(gemini_key and not force_mock and resolved_provider == "gemini")
 
     usage = TokenUsage()
     all_steps: list[StoryStepDraft] = []
