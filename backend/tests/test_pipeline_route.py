@@ -98,4 +98,6 @@ def test_pipeline_run_with_file_upload():
 
     st = get_pipeline_status()
     assert st["status"] == "complete", f"Pipeline did not complete: {st}"
+
+
     assert st["percent"] == 100

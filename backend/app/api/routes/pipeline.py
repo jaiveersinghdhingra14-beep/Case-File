@@ -387,6 +387,11 @@ def run_pipeline_endpoint(
             if clean_target.startswith("ds_"):
                 existing_ds = db.get_dataset(clean_target)
                 parquet_ds_dir = settings.abs_parquet_dir / clean_target
+                if not parquet_ds_dir.exists():
+                    parquet_ds_dir = settings.BASE_DIR / "data" / "parquet" / clean_target
+                if not parquet_ds_dir.exists():
+                    parquet_ds_dir = Path("data/parquet") / clean_target
+
                 has_parquet = parquet_ds_dir.exists() and any(parquet_ds_dir.glob("*.parquet"))
                 if existing_ds or has_parquet:
                     dataset_id = clean_target
@@ -405,6 +410,16 @@ def run_pipeline_endpoint(
                             created_at=datetime.now(timezone.utc),
                         )
                         db.save_dataset(auto_ds)
+                elif clean_target == "ds_4d8f3f29":
+                    # Fallback to raw edr_events.json if parquet directory was missing
+                    raw_edr = settings.BASE_DIR / "data" / "raw" / "edr_events.json"
+                    if not raw_edr.exists():
+                        raw_edr = Path("data/raw/edr_events.json")
+                    if raw_edr.exists():
+                        target_file = raw_edr
+                    else:
+                        resolved = resolve_log_path(clean_target)
+                        target_file = resolved or Path(clean_target)
                 else:
                     resolved = resolve_log_path(clean_target)
                     target_file = resolved or Path(clean_target)

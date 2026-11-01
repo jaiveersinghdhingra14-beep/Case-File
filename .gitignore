@@ -32,13 +32,22 @@ wheels/
 *.db
 *.sqlite
 *.sqlite3
-*.parquet
-data/parquet/*
-!data/parquet/.gitkeep
+
+# Ignore temporary raw uploads and huge log files (only keep Parquet in backend storage)
+data/uploads/*
+!data/uploads/.gitkeep
 data/raw/*
 !data/raw/.gitkeep
 *.log
 !backend/tests/fixtures/*.log
+
+# Parquet storage: Keep pre-indexed verified dataset (ds_4d8f3f29) tracked in repository
+# Ignore large 10GB-30GB raw parquet dumps
+data/parquet/ds_05af4a9e/
+data/parquet/ds_812ee6b0/
+data/parquet/ds_032e899a/
+data/parquet/ds_46a8444f/
+data/parquet/ds_e58b2719/
 
 # Testing & Coverage
 .pytest_cache/
