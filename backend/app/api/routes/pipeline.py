@@ -164,16 +164,18 @@ def _run_pipeline_in_background(
 
             num_workers = workers or 4
 
-            # Progress callback: updates status during ingestion with real progress
+            # Progress callback: dynamically advances percentage from 20% to 35%
+            estimated_total_lines = max(1, int(file_size_bytes / 300))
+
             def _ingestion_progress(rows_in: int, rows_out: int) -> None:
-                # Scale ingestion progress from 20% to 35% of overall pipeline
-                # Estimate based on file size processed vs total
+                frac = min(0.99, rows_in / estimated_total_lines)
+                pct = 20 + int(frac * 15)  # Smoothly ranges 20% -> 35%
                 _update_status(
                     "running",
                     "Streaming Ingestion",
-                    28,
+                    pct,
                     f"Ingesting {target_file.name} — {rows_in:,} lines read, "
-                    f"{rows_out:,} events parsed ({file_size_mb:.0f} MB file)...",
+                    f"{rows_out:,} events parsed ({int(frac * 100)}% of ~{file_size_mb:.0f} MB)...",
                 )
 
             _update_status(
