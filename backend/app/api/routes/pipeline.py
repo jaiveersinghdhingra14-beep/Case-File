@@ -386,10 +386,25 @@ def run_pipeline_endpoint(
             # Check if existing dataset ID was passed
             if clean_target.startswith("ds_"):
                 existing_ds = db.get_dataset(clean_target)
-                if existing_ds:
+                parquet_ds_dir = settings.abs_parquet_dir / clean_target
+                has_parquet = parquet_ds_dir.exists() and any(parquet_ds_dir.glob("*.parquet"))
+                if existing_ds or has_parquet:
                     dataset_id = clean_target
-                    target_file = Path(existing_ds.path)
                     is_existing_dataset = True
+                    target_file = Path(existing_ds.path) if existing_ds else parquet_ds_dir
+                    if not existing_ds:
+                        auto_ds = Dataset(
+                            dataset_id=dataset_id,
+                            name=f"Pre-Indexed Dataset {dataset_id}",
+                            path=str(parquet_ds_dir.resolve()),
+                            size_bytes=sum(f.stat().st_size for f in parquet_ds_dir.glob("*.parquet")),
+                            format="PARQUET",
+                            status=DatasetStatus.ready,
+                            events_total=0,
+                            hosts=[],
+                            created_at=datetime.now(timezone.utc),
+                        )
+                        db.save_dataset(auto_ds)
                 else:
                     resolved = resolve_log_path(clean_target)
                     target_file = resolved or Path(clean_target)
