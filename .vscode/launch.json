@@ -1,0 +1,49 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "CaseFile: Run Currently Open File (F5)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/manage.py",
+      "args": ["run-all", "${file}"],
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "CaseFile: Prompt for Log File Path / Dataset ID",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/manage.py",
+      "args": ["run-all", "${input:logFilePath}"],
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "CaseFile: Run EDR Sample (ds_4d8f3f29)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/manage.py",
+      "args": ["run-all", "ds_4d8f3f29"],
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "CaseFile: Start Web Server (manage.py serve)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/manage.py",
+      "args": ["serve"],
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }
+  ],
+  "inputs": [
+    {
+      "id": "logFilePath",
+      "type": "promptString",
+      "description": "Enter the path to your log file (.log, .json, .csv) or dataset ID",
+      "default": "data/raw/edr_events.json"
+    }
+  ]
+}
