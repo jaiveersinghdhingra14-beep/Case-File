@@ -48,6 +48,16 @@ def _is_priv_addr(ip: str | None) -> bool:
     )
 
 
+def is_internal_asset(addr: str | None) -> bool:
+    """Returns True if address is an internal IP or endpoint hostname (e.g. WS-ENG-010, srv-db)."""
+    if not addr:
+        return False
+    if _is_priv_addr(addr):
+        return True
+    # If not a standard IPv4 address, it's an internal workstation/server hostname
+    return bool(not re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", addr))
+
+
 def format_narrative_to_html(text: str) -> str:
     """Renders structured Markdown narrative headers and bolding into styled HTML."""
     if not text:
@@ -105,16 +115,20 @@ def build_dashboard_html(
         for addr in (e.host, e.remote_address):
             if not addr:
                 continue
-            if _is_priv_addr(addr):
+            if is_internal_asset(addr):
                 internal_hosts.add(addr)
             elif not addr.startswith(("0.", "255.", "224.")):
                 external_ips.add(addr)
 
         if e.remote_address and e.host:
-            if not _is_priv_addr(e.host) and _is_priv_addr(e.remote_address):
+            if not is_internal_asset(e.host) and is_internal_asset(e.remote_address):
                 dmz_targets.add(e.remote_address)
-            elif not _is_priv_addr(e.remote_address) and _is_priv_addr(e.host):
+            elif not is_internal_asset(e.remote_address) and is_internal_asset(e.host):
                 dmz_targets.add(e.host)
+
+    # Ensure internal_hosts is never empty if candidate events exist
+    if not internal_hosts and candidate_events:
+        internal_hosts = {e.host for e in candidate_events if e.host}
 
     # Add External Threat Campaign Root (Zone 1)
     if external_ips:

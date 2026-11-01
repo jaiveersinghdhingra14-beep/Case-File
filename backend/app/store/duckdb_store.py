@@ -31,6 +31,14 @@ class DuckDBStore:
             return False
         return any(ds_dir.glob("**/*.parquet"))
 
+    def query(self, sql: str, params: list | None = None) -> list[tuple]:
+        """Execute arbitrary SQL query against DuckDB and return fetched rows."""
+        con = duckdb.connect(":memory:")
+        try:
+            return con.execute(sql, params or []).fetchall()
+        finally:
+            con.close()
+
     def query_events(
         self,
         dataset_id: str,

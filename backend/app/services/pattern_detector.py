@@ -355,6 +355,7 @@ def detect_attack_patterns(
 
     # Query DuckDB directly over parquet
     store = DuckDBStore()
+    parquet_glob = store.get_dataset_parquet_glob(dataset_id)
     sql = f"""
         SELECT 
             host, 
@@ -366,7 +367,7 @@ def detect_attack_patterns(
             MIN(timestamp) as start_t,
             MAX(timestamp) as end_t,
             LIST(event_id) as event_ids
-        FROM read_parquet('{store.base_dir}/{dataset_id}/*.parquet')
+        FROM read_parquet('{parquet_glob}')
         WHERE mitre_ids IS NOT NULL AND ARRAY_LENGTH(mitre_ids) > 0
         GROUP BY host, remote_address, mitre_ids, category
         HAVING COUNT(*) >= 2
@@ -376,7 +377,10 @@ def detect_attack_patterns(
     try:
         rows = store.query(sql)
     except Exception:  # noqa: BLE001
-        return []
+        rows = []
+
+    if not rows and events:
+        return detect_patterns_from_events(events)
 
     patterns: list[AttackPattern] = []
     for r in rows:

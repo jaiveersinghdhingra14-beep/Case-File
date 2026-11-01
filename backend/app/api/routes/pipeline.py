@@ -226,6 +226,10 @@ def _run_pipeline_in_background(
         seeds = get_top_k_seeds(dataset_id_val, top_k=top_k, min_rarity_score=0.1)
         expanded = expand_neighborhood(dataset_id_val, seeds, window_seconds=120, max_expanded_events=2000)
 
+        # Fallback: if parquet-level query returned 0 patterns, detect from candidate events
+        if not patterns and expanded:
+            patterns = detect_attack_patterns(dataset_id=dataset_id_val, events=expanded)
+
         # 6. Raw Data Post-Processing & Adversarial Anti-Evasion
         _update_status("running", "Anti-Evasion Shield", 68, "Raw Data Post-Processing: unmasking Base64, carat & delimiters...")
         expanded, _evasion_metrics = raw_data_post_process(expanded)

@@ -26,6 +26,34 @@ _KV_PATTERN = re.compile(r'(\w+)=(?:"([^"]*)"|(\S+))')
 _DATE_TIME_RE = re.compile(r"(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})")
 
 
+def _is_priv_addr(ip: str | None) -> bool:
+    if not ip:
+        return False
+    return ip.startswith(
+        (
+            "10.",
+            "172.16.",
+            "172.17.",
+            "172.18.",
+            "172.19.",
+            "172.20.",
+            "172.21.",
+            "172.22.",
+            "172.23.",
+            "172.24.",
+            "172.25.",
+            "172.26.",
+            "172.27.",
+            "172.28.",
+            "172.29.",
+            "172.30.",
+            "172.31.",
+            "192.168.",
+            "127.",
+        )
+    )
+
+
 class FortigateParser(BaseParser):
     """Parses Fortinet / FortiOS UTM and Firewall log lines."""
 
@@ -96,13 +124,22 @@ class FortigateParser(BaseParser):
             return None
 
         # --- 2. Host identification ---
-        # For network logs, internal client IP (srcip) or source interface is the affected asset
+        # For network logs, internal client IP or server is the affected asset
         srcip = kvs.get("srcip")
+        dstip = kvs.get("dstip")
         devname = kvs.get("devname", "firewall")
-        host = srcip or devname
+
+        if srcip and _is_priv_addr(srcip):
+            host = srcip
+            remote_ip = dstip
+        elif dstip and _is_priv_addr(dstip):
+            host = dstip
+            remote_ip = srcip
+        else:
+            host = srcip or devname
+            remote_ip = dstip
 
         # --- 3. Remote address & port ---
-        dstip = kvs.get("dstip")
         dstport = self.safe_int(kvs.get("dstport"))
 
         # --- 4. User & Service ---
@@ -171,7 +208,7 @@ class FortigateParser(BaseParser):
             "executable": None,
             "command_line": None,
             "file_path": None,
-            "remote_address": dstip,
+            "remote_address": remote_ip,
             "remote_port": dstport,
             "wazuh_rule_id": self.safe_int(kvs.get("policyid")),
             "wazuh_rule_level": None,
