@@ -411,16 +411,30 @@ def detect_attack_patterns(
             stage = KillChainStage.LATERAL_MOVEMENT
             t_name = "Remote Services"
 
+        # Smart target vs attacker attribution:
+        # Monitored corporate workstation/server is target, external origin is attacker
+        from .dashboard_builder import is_internal_asset
+
+        if is_internal_asset(r_addr) and not is_internal_asset(host):
+            target = r_addr
+            attacker = host
+        elif is_internal_asset(host):
+            target = host
+            attacker = r_addr
+        else:
+            target = host or "unknown"
+            attacker = r_addr or "unknown"
+
         patterns.append(
             AttackPattern(
                 pattern_id=f"pat_{uuid.uuid4().hex[:6]}",
                 pattern_type=p_type,
-                title=f"{t_name} Wave ({cnt} events on {host})",
+                title=f"{t_name} Wave ({cnt} events targeting {target})",
                 mitre_id=m_id,
                 technique_name=t_name,
                 kill_chain_stage=stage,
-                target_host=host or "unknown",
-                source_ip=r_addr,
+                target_host=target,
+                source_ip=attacker,
                 attempt_count=cnt,
                 start_time=st_dt,
                 end_time=et_dt,

@@ -190,11 +190,20 @@ def _run_pipeline_in_background(
                 num_workers=num_workers,
                 progress_callback=_ingestion_progress,
             )
+
+            # Clean up raw uploaded file: only retain columnar Parquet in backend storage
+            upload_dir = settings.BASE_DIR / "data" / "uploads"
+            try:
+                if target_file.resolve().is_relative_to(upload_dir.resolve()) and target_file.exists():
+                    target_file.unlink()
+            except Exception:  # noqa: BLE001, S110
+                pass
+
             _update_status(
                 "running",
                 "Ingestion Complete",
                 35,
-                f"Ingested {getattr(report, 'rows_out', 0):,} events into Parquet.",
+                f"Ingested {getattr(report, 'rows_out', 0):,} events into Parquet (raw upload purged).",
                 dataset_id=dataset_id_val,
             )
         else:

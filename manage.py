@@ -422,7 +422,7 @@ def cmd_run_all(args: argparse.Namespace) -> int:
 
     # 5. Build Unified Dashboard
     print("\n[5/5] Compiling Unified SOC Incident Command Dashboard...")
-    dashboard_path = BASE_DIR / "frontend" / "index.html"
+    dashboard_path = BASE_DIR / "frontend" / "dashboard.html"
     build_dashboard_html(
         dataset_id=dataset_id,
         dataset_name=ds.name,
