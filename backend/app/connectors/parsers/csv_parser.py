@@ -36,6 +36,10 @@ _EVENT_ID_COLS = ("event_id", "eventid", "id", "record_id", "recordnumber")
 class CsvParser(BaseParser):
     """Parses CSV or TSV log files with auto-detected delimiter and header mapping."""
 
+    def __init__(self) -> None:
+        self.columns: list[str] = []
+        self.delimiter: str = ","
+
     def can_parse(self, sample_lines: list[str]) -> bool:
         """Returns True if lines look like delimited data with a consistent column count."""
         if not sample_lines:
@@ -54,6 +58,11 @@ class CsvParser(BaseParser):
                     col_counts = [len(r) for r in rows]
                     # Consistent column count >= 3 columns
                     if col_counts[0] >= 3 and all(c == col_counts[0] for c in col_counts[:3]):
+                        self.delimiter = delimiter
+                        # Attempt to pre-parse columns from first row if it looks like a header
+                        first_row = [c.strip().lower() for c in rows[0]]
+                        if any(c in _TIMESTAMP_COLS or c in _HOST_COLS or c in _IP_COLS or c in _EVENT_ID_COLS for c in first_row):
+                            self.columns = first_row
                         return True
             except csv.Error:
                 continue
@@ -66,9 +75,48 @@ class CsvParser(BaseParser):
         byte_offset: int = 0,
         byte_length: int = 0,
     ) -> dict[str, Any] | None:
-        # CSV parsing requires header context; handled by the ingest pipeline
-        # which calls parse_line_with_header instead
-        return None
+        stripped = line.strip()
+        if not stripped:
+            return None
+
+        # Check if line contains delimiter
+        if self.delimiter not in stripped:
+            for alt_delim in (",", "\t", "|", ";"):
+                if alt_delim in stripped:
+                    self.delimiter = alt_delim
+                    break
+
+        try:
+            reader = csv.reader(io.StringIO(stripped), delimiter=self.delimiter)
+            row_vals = next(reader, [])
+        except csv.Error:
+            return None
+
+        if not row_vals or len(row_vals) < 2:
+            return None
+
+        # If columns not set yet, check if this line is a header
+        if not self.columns:
+            lower_vals = [c.strip().lower() for c in row_vals]
+            if any(c in _TIMESTAMP_COLS or c in _HOST_COLS or c in _IP_COLS or c in _EVENT_ID_COLS for c in lower_vals):
+                self.columns = lower_vals
+                return None  # Skip header row itself
+            # Positional fallback columns
+            self.columns = [f"col_{i}" for i in range(len(row_vals))]
+
+        # Check if line is a repeated header row from another shard
+        lower_vals = [c.strip().lower() for c in row_vals]
+        if lower_vals == self.columns:
+            return None
+
+        return self.parse_data_line(
+            line=stripped,
+            columns=self.columns,
+            delimiter=self.delimiter,
+            source_file=source_file,
+            byte_offset=byte_offset,
+            byte_length=byte_length,
+        )
 
     def detect_delimiter(self, sample_lines: list[str]) -> str:
         """Auto-detect the delimiter used in the CSV file."""

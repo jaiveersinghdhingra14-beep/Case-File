@@ -38,13 +38,20 @@ _SYSLOG_5424_RE = re.compile(
     r"(?:\[.*?\])?\s*"
     r"(.*)$"
 )
+# Standard Linux syslog without <priority>: Nov  1 05:22:33 hostname app[pid]: message
+_SYSLOG_NOPRI_RE = re.compile(
+    r"^(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+"
+    r"(\S+)\s+"
+    r"(\S+?)(?:\[(\d+)\])?:\s*"
+    r"(.*)$"
+)
 
 
 class SyslogParser(BaseParser):
     """Parses syslog (RFC 3164 and RFC 5424) formatted log lines."""
 
     def can_parse(self, sample_lines: list[str]) -> bool:
-        """Returns True if >= 50% of non-blank lines match syslog format (start with '<')."""
+        """Returns True if >= 40% of non-blank lines match syslog format."""
         hits = 0
         total = 0
         for line in sample_lines:
@@ -52,9 +59,13 @@ class SyslogParser(BaseParser):
             if not stripped:
                 continue
             total += 1
-            if stripped.startswith("<") and (_SYSLOG_3164_RE.match(stripped) or _SYSLOG_5424_RE.match(stripped)):
+            if (
+                _SYSLOG_3164_RE.match(stripped)
+                or _SYSLOG_5424_RE.match(stripped)
+                or _SYSLOG_NOPRI_RE.match(stripped)
+            ):
                 hits += 1
-        return total > 0 and (hits / total) >= 0.5
+        return total > 0 and (hits / total) >= 0.4
 
     def parse_line(
         self,
@@ -67,7 +78,7 @@ class SyslogParser(BaseParser):
         if not stripped:
             return None
 
-        # Try RFC 5424 first (more specific), then 3164
+        # Try RFC 5424 first (more specific), then 3164, then NOPRI
         m = _SYSLOG_5424_RE.match(stripped)
         if m:
             _pri, ts_str, host, app, proc_id, msg = m.groups()
@@ -75,9 +86,14 @@ class SyslogParser(BaseParser):
             pid = self.safe_int(proc_id)
         else:
             m = _SYSLOG_3164_RE.match(stripped)
-            if not m:
-                return None
-            _pri, ts_str, host, app, pid_str, msg = m.groups()
+            if m:
+                _pri, ts_str, host, app, pid_str, msg = m.groups()
+            else:
+                m_nopri = _SYSLOG_NOPRI_RE.match(stripped)
+                if not m_nopri:
+                    return None
+                ts_str, host, app, pid_str, msg = m_nopri.groups()
+
             # RFC 3164 timestamps lack year; assume current year
             year = datetime.now(timezone.utc).year
             ts = self.safe_timestamp(f"{year} {ts_str}")
