@@ -442,7 +442,8 @@ def cmd_run_all(args: argparse.Namespace) -> int:
     print("=" * 80)
     print(f"CASE: {case_id} | STORY: {story_id} | MODEL: {model_label}\n")
     print("Summary:")
-    print(f"  {story.summary}\n")
+    safe_summary = story.summary.encode("ascii", errors="replace").decode("ascii")
+    print(f"  {safe_summary}\n")
     print("Chronological Kill Chain Steps:")
     for idx, s in enumerate(story.steps[:6], start=1):
         cites = (
@@ -450,8 +451,10 @@ def cmd_run_all(args: argparse.Namespace) -> int:
             if hasattr(s, "evidence") and s.evidence
             else "telemetry_verified"
         )
-        print(f"  Step {idx}. [{s.technique_id or 'T1190'}] {s.title}")
-        print(f"    Action : {s.description}")
+        safe_title = (s.title or "").encode("ascii", errors="replace").decode("ascii")
+        safe_desc = (s.description or "").encode("ascii", errors="replace").decode("ascii")
+        print(f"  Step {idx}. [{s.technique_id or 'T1190'}] {safe_title}")
+        print(f"    Action : {safe_desc}")
         print(f"    Verdict: [VERIFIED] (Citing: {cites})")
 
     print("\n" + "=" * 80)

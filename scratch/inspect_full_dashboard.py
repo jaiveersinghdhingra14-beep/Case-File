@@ -1,7 +1,7 @@
 import re
 from pathlib import Path
 
-html = Path(r"D:\Case-File\frontend\dashboard.html").read_text(encoding="utf-8")
+html = Path(r"D:\Case-File\frontend\index.html").read_text(encoding="utf-8")
 
 # 1. Header info
 print("=== 1. HEADER INFO ===")
