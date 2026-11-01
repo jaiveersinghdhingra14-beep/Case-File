@@ -391,7 +391,7 @@ def detect_attack_patterns(
         dur = max(1.0, (et_dt - st_dt).total_seconds())
 
         p_type = PatternType.ANOMALOUS_BURST
-        stage = KillChainStage.DELIVERY
+        stage = KillChainStage.INITIAL_ACCESS
         t_name = "Exploit Attempt"
 
         if "T1110" in m_ids or cat == "auth":
